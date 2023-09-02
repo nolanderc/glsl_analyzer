@@ -1,0 +1,4 @@
+
+generate-spec:
+    ./gen_spec.py
+
