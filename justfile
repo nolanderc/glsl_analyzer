@@ -6,8 +6,8 @@ optimize := "Debug"
 
 flags := "-freference-trace=10 -Dtarget="+target+" -Doptimize="+optimize
 
-run:
-    zig build run --summary none {{flags}}
+run *ARGS:
+    zig build run --summary none {{flags}} -- {{ARGS}}
 
 watch command="build":
     watchexec -e zig,vert,frag,comp -c -- 'just {{command}} && echo ok'
@@ -20,3 +20,6 @@ test:
 
 clean:
     rm -rf zig-cache zig-out
+
+install prefix="$HOME/.local/":
+    zig build install --prefix "{{prefix}}" {{flags}}

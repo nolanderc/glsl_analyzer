@@ -1,0 +1,16 @@
+Content-Length: 246
+
+[
+    {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "textDocument/completion",
+        "params": {}
+    },
+    {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "textDocument/completion",
+        "params": {}
+    }
+]

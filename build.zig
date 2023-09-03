@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -10,6 +10,14 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    exe.linkLibC();
+
+    {
+        const options = b.addOptions();
+        const build_root_path = try std.fs.path.resolve(b.allocator, &.{b.build_root.path orelse "."});
+        options.addOption([]const u8, "build_root", build_root_path);
+        exe.addOptions("build_options", options);
+    }
 
     b.installArtifact(exe);
     const run_cmd = b.addRunArtifact(exe);
