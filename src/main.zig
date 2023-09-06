@@ -8,6 +8,10 @@ const Request = rpc.Request;
 
 const Arguments = @import("cli.zig").Arguments;
 
+pub const std_options = struct {
+    pub const log_level = .info;
+};
+
 fn enableDevelopmentMode() !void {
     // redirect stderr to the build root
     const stderr_target = build_options.build_root ++ "/stderr.log";
@@ -58,6 +62,7 @@ pub fn main() !void {
         .allocator = allocator,
         .channel = &buffered_writer,
     };
+    defer state.deinit();
 
     var buffered_reader = std.io.bufferedReader(channel.reader());
     const reader = buffered_reader.reader();
@@ -222,6 +227,16 @@ const State = struct {
     channel: *std.io.BufferedWriter(4096, Channel.Writer),
     initialized: bool = false,
     parent_pid: ?c_int = null,
+    files: std.StringHashMapUnmanaged(IncrementalFile) = .{},
+
+    pub fn deinit(self: *State) void {
+        var entries = self.files.iterator();
+        while (entries.next()) |entry| {
+            entry.value_ptr.deinit(self.allocator);
+            self.allocator.free(entry.key_ptr.*);
+        }
+        self.files.deinit(self.allocator);
+    }
 
     fn handleMessage(self: *State, message: *rpc.Message(Request)) !void {
         switch (message.*) {
@@ -295,6 +310,68 @@ const State = struct {
         defer self.allocator.free(bytes);
         try self.sendResponse(&Response{ .id = id, .result = .{ .success = .{ .raw = bytes } } });
     }
+
+    fn getOrCreateFile(self: *State, document: lsp.VersionedTextDocumentIdentifier) !*IncrementalFile {
+        const entry = try self.files.getOrPut(self.allocator, document.uri);
+        if (!entry.found_existing) {
+            errdefer self.files.removeByPtr(entry.key_ptr);
+            entry.key_ptr.* = try self.allocator.dupe(u8, document.uri);
+            entry.value_ptr.* = .{ .version = document.version };
+        }
+        return entry.value_ptr;
+    }
+};
+
+const IncrementalFile = struct {
+    version: i64,
+
+    /// The raw bytes of the file (utf-8)
+    contents: std.ArrayListUnmanaged(u8) = .{},
+
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        self.contents.deinit(allocator);
+    }
+
+    pub fn replaceAll(self: *@This(), allocator: std.mem.Allocator, text: []const u8) !void {
+        self.contents.shrinkRetainingCapacity(0);
+        try self.contents.appendSlice(allocator, text);
+    }
+
+    pub fn replace(self: *@This(), allocator: std.mem.Allocator, range: lsp.Range, text: []const u8) !void {
+        const start = self.utf8FromPosition(range.start);
+        const end = self.utf8FromPosition(range.end);
+        const range_len = end - start;
+        try self.contents.replaceRange(allocator, start, range_len, text);
+    }
+
+    pub fn utf8FromPosition(self: @This(), position: lsp.Position) u32 {
+        var remaining_lines = position.line;
+        var i: usize = 0;
+        const bytes = self.contents.items;
+
+        while (remaining_lines != 0 and i < bytes.len) {
+            remaining_lines -= @intFromBool(bytes[i] == '\n');
+            i += 1;
+        }
+
+        const rest = self.contents.items[i..];
+
+        var remaining_chars = position.character;
+        var codepoints = std.unicode.Utf8View.initUnchecked(rest).iterator();
+        while (remaining_chars != 0) {
+            const codepoint = codepoints.nextCodepoint() orelse break;
+            remaining_chars -|= std.unicode.utf16CodepointSequenceLength(codepoint) catch unreachable;
+        }
+
+        return @intCast(i + codepoints.i);
+    }
+};
+
+const LineStart = struct {
+    /// The utf-8 byte offset.
+    utf8: u32,
+    /// The utf-16 byte offset.
+    utf16: u32,
 };
 
 const Diagnostic = struct {
@@ -374,12 +451,15 @@ pub const Dispatch = struct {
         defer params.deinit();
 
         const document = &params.value.textDocument;
-        std.log.info("opened: {s} : {s} : {} : {}", .{
+        std.log.debug("opened: {s} : {s} : {} : {}", .{
             document.uri,
             document.languageId,
             document.version,
             document.text.len,
         });
+
+        const file = try state.getOrCreateFile(document.versioned());
+        try file.replaceAll(state.allocator, document.text);
 
         return;
     }
@@ -391,7 +471,7 @@ pub const Dispatch = struct {
     pub fn @"textDocument/didClose"(state: *State, request: *Request) !void {
         const params = try parseParams(DidCloseParams, state, request);
         defer params.deinit();
-        std.log.info("closed: {s}", .{params.value.textDocument.uri});
+        std.log.debug("closed: {s}", .{params.value.textDocument.uri});
         return;
     }
 
@@ -404,7 +484,7 @@ pub const Dispatch = struct {
         const params = try parseParams(DidSaveParams, state, request);
         defer params.deinit();
 
-        std.log.info("saved: {s} : {?}", .{
+        std.log.debug("saved: {s} : {?}", .{
             params.value.textDocument.uri,
             if (params.value.text) |text| text.len else null,
         });
@@ -412,7 +492,10 @@ pub const Dispatch = struct {
         return;
     }
 
-    pub const CompletionParams = struct {};
+    pub const CompletionParams = struct {
+        textDocument: lsp.TextDocumentIdentifier,
+        position: lsp.Position,
+    };
 
     pub const CompletionItem = struct {
         label: []const u8,
@@ -421,6 +504,8 @@ pub const Dispatch = struct {
     pub fn @"textDocument/completion"(state: *State, request: *Request) !void {
         const params = try parseParams(CompletionParams, state, request);
         defer params.deinit();
+
+        std.log.debug("complete: {} {s}", .{ params.value.position, params.value.textDocument.uri });
 
         try state.success(request.id, &[_]CompletionItem{
             .{ .label = "int" },
@@ -450,13 +535,18 @@ pub const Dispatch = struct {
         const params = try parseParams(DidChangeParams, state, request);
         defer params.deinit();
 
-        std.log.info("didChange: {s}", .{params.value.textDocument.uri});
+        std.log.debug("didChange: {s}", .{params.value.textDocument.uri});
+        const file: *IncrementalFile = try state.getOrCreateFile(params.value.textDocument);
+
         for (params.value.contentChanges) |change| {
-            std.log.info(
-                "  - {?} : '{'}'",
-                .{ change.range, std.zig.fmtEscapes(change.text) },
-            );
+            if (change.range) |range| {
+                try file.replace(state.allocator, range, change.text);
+            } else {
+                try file.replaceAll(state.allocator, change.text);
+            }
         }
+
+        file.version = params.value.textDocument.version;
     }
 
     fn parseParams(comptime T: type, state: *State, request: *Request) !std.json.Parsed(T) {

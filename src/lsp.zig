@@ -43,6 +43,10 @@ pub const TextDocumentItem = struct {
     languageId: []const u8,
     version: i64,
     text: []const u8,
+
+    pub fn versioned(self: @This()) VersionedTextDocumentIdentifier {
+        return .{ .uri = self.uri, .version = self.version };
+    }
 };
 
 pub const TextDocumentIdentifier = struct {
