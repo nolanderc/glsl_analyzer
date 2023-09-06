@@ -23,3 +23,7 @@ clean:
 
 install prefix="$HOME/.local/":
     zig build install --prefix "{{prefix}}" {{flags}}
+
+stderr:
+    tail --follow stderr.log
+

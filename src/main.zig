@@ -1,6 +1,11 @@
 const std = @import("std");
 const build_options = @import("build_options");
 
+const lsp = @import("lsp.zig");
+const rpc = @import("jsonrpc.zig");
+const Response = rpc.Response;
+const Request = rpc.Request;
+
 const Arguments = @import("cli.zig").Arguments;
 
 fn enableDevelopmentMode() !void {
@@ -102,19 +107,20 @@ pub fn main() !void {
             scanner.enableDiagnostics(&diagnostics);
 
             break :blk std.json.parseFromTokenSourceLeaky(
-                RequestMessage,
+                rpc.Message(Request),
                 parse_arena.allocator(),
                 &scanner,
                 .{ .allocate = .alloc_if_needed },
             ) catch |err| {
                 logJsonError(@errorName(err), diagnostics, contents);
-                return err;
+                state.fail(.null, .{ .code = .parse_error, .message = @errorName(err) }) catch {};
+                continue;
             };
         };
 
-        state.handleMessage(&message) catch |err| {
-            if (err == error.Failure) continue;
-            return err;
+        state.handleMessage(&message) catch |err| switch (err) {
+            error.Failure => continue,
+            else => return err,
         };
     }
 }
@@ -211,119 +217,13 @@ pub const Channel = union(enum) {
     }
 };
 
-fn Message(comptime Inner: type) type {
-    return union(enum) {
-        single: Inner,
-        batch: []Inner,
-
-        pub fn jsonParse(
-            allocator: std.mem.Allocator,
-            source: anytype,
-            options: std.json.ParseOptions,
-        ) !@This() {
-            switch (try source.peekNextTokenType()) {
-                .object_begin => return .{
-                    .single = try std.json.innerParse(Inner, allocator, source, options),
-                },
-                .array_begin => return .{
-                    .batch = try std.json.innerParse([]Inner, allocator, source, options),
-                },
-                else => return error.UnexpectedToken,
-            }
-        }
-    };
-}
-
-const RequestMessage = Message(Request);
-
-const Request = struct {
-    pub const Id = std.json.Value;
-
-    jsonrpc: []const u8,
-    method: []const u8,
-    id: Id = .null,
-    params: std.json.Value = .null,
-};
-
-const Response = struct {
-    jsonrpc: []const u8 = "2.0",
-    id: Request.Id,
-    result: Result,
-
-    pub const Result = union(enum) {
-        success: JsonPreformatted,
-        failure: LspError,
-    };
-
-    pub fn jsonStringify(self: @This(), jw: anytype) !void {
-        try jw.beginObject();
-
-        try jw.objectField("jsonrpc");
-        try jw.write(self.jsonrpc);
-
-        try jw.objectField("id");
-        try jw.write(self.id);
-
-        switch (self.result) {
-            .success => |data| {
-                try jw.objectField("result");
-                try jw.write(data);
-            },
-            .failure => |err| {
-                try jw.objectField("error");
-                try jw.write(err);
-            },
-        }
-
-        try jw.endObject();
-    }
-};
-
-pub const JsonPreformatted = struct {
-    raw: []const u8,
-
-    pub fn jsonStringify(self: @This(), jw: anytype) !void {
-        try jw.print("{s}", .{self.raw});
-    }
-};
-
-pub const LspError = struct {
-    code: Code,
-    message: []const u8,
-    data: ?std.json.Value = null,
-
-    pub const Code = enum(i32) {
-        parse_error = -32700,
-        invalid_request = -32600,
-        method_not_found = -32601,
-        invalid_params = -32502,
-        internal_error = -32603,
-
-        // jsonrpc reserved:
-        server_not_initialized = -32002,
-        unknown_error_code = -32001,
-
-        // LSP reserved:
-        request_failed = -32803,
-        server_cancelled = -32802,
-        content_modified = -32801,
-        request_cancelled = -32800,
-
-        _,
-
-        pub fn jsonStringify(self: @This(), jw: anytype) !void {
-            try jw.write(@intFromEnum(self));
-        }
-    };
-};
-
 const State = struct {
     allocator: std.mem.Allocator,
     channel: *std.io.BufferedWriter(4096, Channel.Writer),
     initialized: bool = false,
     parent_pid: ?c_int = null,
 
-    fn handleMessage(self: *State, message: *RequestMessage) !void {
+    fn handleMessage(self: *State, message: *rpc.Message(Request)) !void {
         switch (message.*) {
             .single => |*request| try self.dispatchRequest(request),
             .batch => |batch| try self.dispatchBatch(batch),
@@ -356,7 +256,7 @@ const State = struct {
             }
         } else {
             return self.fail(request.id, .{
-                .code = .invalid_request,
+                .code = .method_not_found,
                 .message = request.method,
             });
         }
@@ -384,7 +284,7 @@ const State = struct {
     pub fn fail(
         self: *State,
         id: Request.Id,
-        err: LspError,
+        err: lsp.Error,
     ) (error{Failure} || SendError) {
         try self.sendResponse(&.{ .id = id, .result = .{ .failure = err } });
         return error.Failure;
@@ -399,6 +299,7 @@ const State = struct {
 
 const Diagnostic = struct {
     message: ?[]const u8 = null,
+    /// If the message has been allocated, this is `false`, otherwise `true`.
     static: bool = true,
 };
 
@@ -411,6 +312,7 @@ pub const Dispatch = struct {
         "textDocument/didOpen",
         "textDocument/didClose",
         "textDocument/didSave",
+        "textDocument/didChange",
     };
 
     pub const InitializeParams = struct {
@@ -419,13 +321,13 @@ pub const Dispatch = struct {
             name: []const u8,
             version: ?[]const u8 = null,
         } = null,
-        capabilities: ClientCapabilities,
+        capabilities: lsp.ClientCapabilities,
     };
 
     pub fn initialize(state: *State, request: *Request) !void {
         if (state.initialized) {
             return state.fail(request.id, .{
-                .code = LspError.Code.invalid_request,
+                .code = .invalid_request,
                 .message = "server already initialized",
             });
         }
@@ -438,7 +340,7 @@ pub const Dispatch = struct {
                 .completionProvider = .{},
                 .textDocumentSync = .{
                     .openClose = true,
-                    .change = 1, // full
+                    .change = @intFromEnum(lsp.TextDocumentSyncKind.incremental),
                     .willSave = false,
                     .willSaveWaitUntil = false,
                     .save = .{ .includeText = false },
@@ -464,7 +366,7 @@ pub const Dispatch = struct {
     }
 
     pub const DidOpenParams = struct {
-        textDocument: TextDocumentItem,
+        textDocument: lsp.TextDocumentItem,
     };
 
     pub fn @"textDocument/didOpen"(state: *State, request: *Request) !void {
@@ -483,7 +385,7 @@ pub const Dispatch = struct {
     }
 
     pub const DidCloseParams = struct {
-        textDocument: TextDocumentIdentifier,
+        textDocument: lsp.TextDocumentIdentifier,
     };
 
     pub fn @"textDocument/didClose"(state: *State, request: *Request) !void {
@@ -494,7 +396,7 @@ pub const Dispatch = struct {
     }
 
     pub const DidSaveParams = struct {
-        textDocument: TextDocumentIdentifier,
+        textDocument: lsp.TextDocumentIdentifier,
         text: ?[]const u8 = null,
     };
 
@@ -539,56 +441,27 @@ pub const Dispatch = struct {
         });
     }
 
+    pub const DidChangeParams = struct {
+        textDocument: lsp.VersionedTextDocumentIdentifier,
+        contentChanges: []const lsp.TextDocumentContentChangeEvent,
+    };
+
+    pub fn @"textDocument/didChange"(state: *State, request: *Request) !void {
+        const params = try parseParams(DidChangeParams, state, request);
+        defer params.deinit();
+
+        std.log.info("didChange: {s}", .{params.value.textDocument.uri});
+        for (params.value.contentChanges) |change| {
+            std.log.info(
+                "  - {?} : '{'}'",
+                .{ change.range, std.zig.fmtEscapes(change.text) },
+            );
+        }
+    }
+
     fn parseParams(comptime T: type, state: *State, request: *Request) !std.json.Parsed(T) {
         return std.json.parseFromValue(T, state.allocator, request.params, .{
             .ignore_unknown_fields = true,
         });
     }
-};
-
-const InitializeResult = struct {
-    capabilities: ServerCapabilities,
-    serverInfo: ?struct {
-        name: []const u8,
-        version: ?[]const u8 = null,
-    } = null,
-};
-
-const ClientCapabilities = struct {};
-
-const ServerCapabilities = struct {
-    completionProvider: CompletionOptions = .{},
-    textDocumentSync: TextDocumentSyncOptions = .{},
-};
-
-const CompletionOptions = struct {
-    triggerCharacters: ?[]const []const u8 = null,
-};
-
-const PositionEncoding = []const u8;
-
-const TextDocumentSyncOptions = struct {
-    openClose: bool = true,
-    change: TextDocumentSyncKind = .full,
-};
-
-const TextDocumentSyncKind = enum(u8) {
-    none = 0,
-    full = 1,
-    incremental = 2,
-
-    pub fn jsonStringify(self: @This(), jw: anytype) !void {
-        try jw.write(@intFromEnum(self));
-    }
-};
-
-const TextDocumentItem = struct {
-    uri: []const u8,
-    languageId: []const u8,
-    version: i64,
-    text: []const u8,
-};
-
-const TextDocumentIdentifier = struct {
-    uri: []const u8,
 };
