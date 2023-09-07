@@ -10,7 +10,7 @@ run *ARGS:
     zig build run --summary none {{flags}} -- {{ARGS}}
 
 watch command="build":
-    watchexec -e zig,vert,frag,comp -c -- 'just {{command}} && echo ok'
+    watchexec -e zig,py,vert,frag,comp -c -- 'just {{command}} && echo ok'
 
 build:
     zig build --summary none {{flags}}

@@ -1,4 +1,4 @@
 
 generate-spec:
-    ./gen_spec.py
+    ./gen_spec.py spec.json
 

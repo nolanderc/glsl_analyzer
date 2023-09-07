@@ -70,6 +70,11 @@ def parse_prototype(node):
     while i < len(tokens) - 2:
         parameter = {}
 
+        optional = tokens[i] == '['
+        if optional: 
+            i += 1
+            parameter['optional'] = True
+
         if tokens[i] == 'out' or tokens[i] == 'in' or tokens[i] == 'inout':
             parameter['modifier'] = tokens[i]
             i += 1
@@ -84,15 +89,23 @@ def parse_prototype(node):
             parameter['name'] = param_name
             i += 1
 
+        if tokens[i] == '[':
+            array_start = i
+            while i < len(tokens) and tokens[i] != ']':
+                i += 1
+            i += 1
+            parameter['type'] += ''.join(tokens[array_start:i])
+
         parameters.append(parameter)
 
+        if optional: assert tokens[i] == ']'; i += 1
         if tokens[i] == ',': i += 1
 
     assert tokens[-2] == ')'
     assert tokens[-1] == ';'
 
     return {
-        'return':func_output,
+        'return_type':func_output,
         'name':func_name,
         'parameters':parameters,
     }
@@ -117,6 +130,8 @@ def tokenize(text):
     return tokens
 
 
+output = sys.argv[1]
+
 scriptdir = os.path.dirname(sys.argv[0])
 files = [f for f in iglob(f'{scriptdir}/docs.gl/sl4/*.xhtml')]
 
@@ -124,7 +139,7 @@ for i, path in enumerate(files):
     print(f'{1+i:3}/{len(files)}: {path}')
     process_file(path)
 
-with open(f'{scriptdir}/spec.json', 'w') as f:
+with open(output, 'w') as f:
     f.write(json.dumps({
         'comment': 'generated from docs.gl',
         'variables':variables,

@@ -1,20 +1,24 @@
 const std = @import("std");
 const build_options = @import("build_options");
 
+const util = @import("util.zig");
 const lsp = @import("lsp.zig");
 const rpc = @import("jsonrpc.zig");
 const Response = rpc.Response;
 const Request = rpc.Request;
 
-const Arguments = @import("cli.zig").Arguments;
+const Spec = @import("spec.zig").Spec;
+const Workspace = @import("Workspace.zig");
+const cli = @import("cli.zig");
 
 pub const std_options = struct {
     pub const log_level = .info;
 };
 
+const stderr_target = build_options.build_root ++ "/stderr.log";
+
 fn enableDevelopmentMode() !void {
     // redirect stderr to the build root
-    const stderr_target = build_options.build_root ++ "/stderr.log";
     const O = std.os.O;
     const S = std.os.S;
     const new_stderr = try std.os.open(
@@ -30,13 +34,15 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
+    var static_arena = std.heap.ArenaAllocator.init(allocator);
+    defer static_arena.deinit();
 
-    const args = try Arguments.parse(allocator);
+    const args = try cli.Arguments.parse(allocator);
 
     if (args.dev_mode) {
         try enableDevelopmentMode();
         std.debug.print("\x1b[2J", .{}); // clear screen
-        std.log.info("entered development mode @{}", .{std.time.timestamp()});
+        std.log.info("entered development mode '{s}'", .{stderr_target});
     }
 
     var channel: Channel = switch (args.channel) {
@@ -56,11 +62,17 @@ pub fn main() !void {
     };
     defer channel.close();
 
-    var buffered_writer = std.io.bufferedWriter(channel.writer());
+    const spec = try Spec.load(allocator);
+    defer spec.deinit();
 
+    const builtin_completions = try builtinCompletions(static_arena.allocator(), &spec.value);
+
+    var buffered_writer = std.io.bufferedWriter(channel.writer());
     var state = State{
         .allocator = allocator,
         .channel = &buffered_writer,
+        .spec = &spec.value,
+        .builtin_completions = builtin_completions,
     };
     defer state.deinit();
 
@@ -135,7 +147,7 @@ fn logJsonError(err: []const u8, diagnostics: std.json.Diagnostics, bytes: []con
         diagnostics.getLine(),
         diagnostics.getColumn(),
         err,
-        std.zig.fmtEscapes(getJsonErrorContext(diagnostics, bytes)),
+        std.zig.fmtEscapes(util.getJsonErrorContext(diagnostics, bytes)),
     });
 }
 
@@ -227,15 +239,12 @@ const State = struct {
     channel: *std.io.BufferedWriter(4096, Channel.Writer),
     initialized: bool = false,
     parent_pid: ?c_int = null,
-    files: std.StringHashMapUnmanaged(IncrementalFile) = .{},
+    spec: *const Spec,
+    workspace: Workspace = .{},
+    builtin_completions: []const lsp.CompletionItem,
 
     pub fn deinit(self: *State) void {
-        var entries = self.files.iterator();
-        while (entries.next()) |entry| {
-            entry.value_ptr.deinit(self.allocator);
-            self.allocator.free(entry.key_ptr.*);
-        }
-        self.files.deinit(self.allocator);
+        self.workspace.deinit(self.allocator);
     }
 
     fn handleMessage(self: *State, message: *rpc.Message(Request)) !void {
@@ -309,61 +318,6 @@ const State = struct {
         const bytes = try std.json.stringifyAlloc(self.allocator, data, .{});
         defer self.allocator.free(bytes);
         try self.sendResponse(&Response{ .id = id, .result = .{ .success = .{ .raw = bytes } } });
-    }
-
-    fn getOrCreateFile(self: *State, document: lsp.VersionedTextDocumentIdentifier) !*IncrementalFile {
-        const entry = try self.files.getOrPut(self.allocator, document.uri);
-        if (!entry.found_existing) {
-            errdefer self.files.removeByPtr(entry.key_ptr);
-            entry.key_ptr.* = try self.allocator.dupe(u8, document.uri);
-            entry.value_ptr.* = .{ .version = document.version };
-        }
-        return entry.value_ptr;
-    }
-};
-
-const IncrementalFile = struct {
-    version: i64,
-
-    /// The raw bytes of the file (utf-8)
-    contents: std.ArrayListUnmanaged(u8) = .{},
-
-    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
-        self.contents.deinit(allocator);
-    }
-
-    pub fn replaceAll(self: *@This(), allocator: std.mem.Allocator, text: []const u8) !void {
-        self.contents.shrinkRetainingCapacity(0);
-        try self.contents.appendSlice(allocator, text);
-    }
-
-    pub fn replace(self: *@This(), allocator: std.mem.Allocator, range: lsp.Range, text: []const u8) !void {
-        const start = self.utf8FromPosition(range.start);
-        const end = self.utf8FromPosition(range.end);
-        const range_len = end - start;
-        try self.contents.replaceRange(allocator, start, range_len, text);
-    }
-
-    pub fn utf8FromPosition(self: @This(), position: lsp.Position) u32 {
-        var remaining_lines = position.line;
-        var i: usize = 0;
-        const bytes = self.contents.items;
-
-        while (remaining_lines != 0 and i < bytes.len) {
-            remaining_lines -= @intFromBool(bytes[i] == '\n');
-            i += 1;
-        }
-
-        const rest = self.contents.items[i..];
-
-        var remaining_chars = position.character;
-        var codepoints = std.unicode.Utf8View.initUnchecked(rest).iterator();
-        while (remaining_chars != 0) {
-            const codepoint = codepoints.nextCodepoint() orelse break;
-            remaining_chars -|= std.unicode.utf16CodepointSequenceLength(codepoint) catch unreachable;
-        }
-
-        return @intCast(i + codepoints.i);
     }
 };
 
@@ -458,7 +412,7 @@ pub const Dispatch = struct {
             document.text.len,
         });
 
-        const file = try state.getOrCreateFile(document.versioned());
+        const file = try state.workspace.getOrCreateFile(state.allocator, document.versioned());
         try file.replaceAll(state.allocator, document.text);
 
         return;
@@ -497,33 +451,18 @@ pub const Dispatch = struct {
         position: lsp.Position,
     };
 
-    pub const CompletionItem = struct {
-        label: []const u8,
-    };
-
     pub fn @"textDocument/completion"(state: *State, request: *Request) !void {
         const params = try parseParams(CompletionParams, state, request);
         defer params.deinit();
 
         std.log.debug("complete: {} {s}", .{ params.value.position, params.value.textDocument.uri });
 
-        try state.success(request.id, &[_]CompletionItem{
-            .{ .label = "int" },
-            .{ .label = "uint" },
-            .{ .label = "float" },
-            .{ .label = "vec2" },
-            .{ .label = "vec3" },
-            .{ .label = "vec4" },
-            .{ .label = "ivec2" },
-            .{ .label = "ivec3" },
-            .{ .label = "ivec4" },
-            .{ .label = "uvec2" },
-            .{ .label = "uvec3" },
-            .{ .label = "uvec4" },
-            .{ .label = "mat2" },
-            .{ .label = "mat3" },
-            .{ .label = "mat4" },
-        });
+        var completions = std.ArrayList(lsp.CompletionItem).init(state.allocator);
+        defer completions.deinit();
+
+        try completions.appendSlice(state.builtin_completions);
+
+        try state.success(request.id, completions.items);
     }
 
     pub const DidChangeParams = struct {
@@ -536,7 +475,10 @@ pub const Dispatch = struct {
         defer params.deinit();
 
         std.log.debug("didChange: {s}", .{params.value.textDocument.uri});
-        const file: *IncrementalFile = try state.getOrCreateFile(params.value.textDocument);
+        const file: *Workspace.Document = try state.workspace.getOrCreateFile(
+            state.allocator,
+            params.value.textDocument,
+        );
 
         for (params.value.contentChanges) |change| {
             if (change.range) |range| {
@@ -555,3 +497,82 @@ pub const Dispatch = struct {
         });
     }
 };
+
+fn builtinCompletions(arena: std.mem.Allocator, spec: *const Spec) ![]lsp.CompletionItem {
+    var completions = std.ArrayList(lsp.CompletionItem).init(arena);
+
+    const types = [_][]const u8{
+        "int",
+        "uint",
+        "float",
+        "vec2",
+        "vec3",
+        "vec4",
+        "ivec2",
+        "ivec3",
+        "ivec4",
+        "uvec2",
+        "uvec3",
+        "uvec4",
+        "mat2",
+        "mat3",
+        "mat4",
+    };
+
+    try completions.ensureUnusedCapacity(types.len + spec.variables.len + spec.functions.len);
+
+    for (types) |name| {
+        try completions.append(.{ .label = name, .kind = .class });
+    }
+
+    for (spec.variables) |variable| {
+        var signature = std.ArrayList(u8).init(arena);
+        try signature.appendSlice(@tagName(variable.modifier));
+        try signature.appendSlice(" ");
+        try signature.appendSlice(variable.type);
+
+        try completions.append(.{
+            .label = variable.name,
+            .labelDetails = .{
+                .detail = variable.type,
+            },
+            .kind = .variable,
+            .documentation = .{
+                .kind = .markdown,
+                .value = try std.mem.join(arena, "\n\n", variable.description),
+            },
+        });
+    }
+
+    for (spec.functions) |function| {
+        var signature = std.ArrayList(u8).init(arena);
+        try signature.appendSlice(function.return_type);
+        try signature.appendSlice(" (");
+        for (function.parameters, 0..) |param, i| {
+            if (i != 0) try signature.appendSlice(", ");
+
+            if (param.optional) try signature.appendSlice("[");
+            if (param.modifier) |mod| {
+                try signature.appendSlice(@tagName(mod));
+                try signature.appendSlice(" ");
+            }
+            try signature.appendSlice(param.type);
+            if (param.optional) try signature.appendSlice("]");
+        }
+        try signature.appendSlice(")");
+
+        try completions.append(.{
+            .label = function.name,
+            .labelDetails = .{
+                .detail = try signature.toOwnedSlice(),
+            },
+            .kind = .function,
+            .documentation = .{
+                .kind = .markdown,
+                .value = try std.mem.join(arena, "\n\n", function.description),
+            },
+        });
+    }
+
+    return completions.toOwnedSlice();
+}

@@ -1,6 +1,7 @@
 //! Data structures from the Language Server Protocol
 
 const std = @import("std");
+const util = @import("util.zig");
 
 pub const InitializeResult = struct {
     capabilities: ServerCapabilities,
@@ -89,6 +90,8 @@ pub const Error = struct {
     data: ?std.json.Value = null,
 
     pub const Code = enum(i32) {
+        pub usingnamespace util.JsonEnumAsIntMixin(@This());
+
         parse_error = -32700,
         invalid_request = -32600,
         method_not_found = -32601,
@@ -106,9 +109,55 @@ pub const Error = struct {
         request_cancelled = -32800,
 
         _,
-
-        pub fn jsonStringify(self: @This(), jw: anytype) !void {
-            try jw.write(@intFromEnum(self));
-        }
     };
+};
+
+pub const CompletionItem = struct {
+    label: []const u8,
+    labelDetails: ?LabelDetails = null,
+    kind: ?Kind = null,
+    detail: ?[]const u8 = null,
+    documentation: ?MarkupContent = null,
+
+    pub const Kind = enum(u8) {
+        pub usingnamespace util.JsonEnumAsIntMixin(@This());
+
+        text = 1,
+        method,
+        function,
+        constructor,
+        field,
+        variable,
+        class,
+        interface,
+        module,
+        property,
+        unit,
+        value,
+        @"enum",
+        keyword,
+        snippet,
+        color,
+        file,
+        reference,
+        folder,
+        enum_member,
+        constant,
+        @"struct",
+        event,
+        operator,
+        type_parameter,
+    };
+
+    pub const LabelDetails = struct {
+        detail: ?[]const u8 = null,
+        description: ?[]const u8 = null,
+    };
+};
+
+pub const MarkupContent = struct {
+    pub const Kind = enum { plaintext, markdown };
+
+    kind: Kind,
+    value: []const u8,
 };
