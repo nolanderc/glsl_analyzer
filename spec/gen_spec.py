@@ -20,7 +20,7 @@ def process_file(path):
         desc_node = soup.find(id='description')
         if desc_node is None: return
         paragraphs = desc_node.find_all('p')
-        description = [' '.join(p.getText().split()) for p in paragraphs]
+        description = [paragraph_to_markdown(p) for p in paragraphs]
 
         versions_table = soup.find(id='versions')
         versions_header = versions_table.find('thead').find_all('tr')[-1]
@@ -45,6 +45,78 @@ def process_file(path):
                 prototype['description'] = description
                 prototype['versions'] = version_support[min(i, len(version_support) - 1)]
                 functions.append(prototype)
+
+def paragraph_to_markdown(paragraph):
+    if paragraph.math is not None and paragraph.math.mtable is not None:
+        return '```\n' + expand_math(paragraph.math.mtable) + '\n```\n'
+
+    for tag in paragraph.find_all('em'):
+        tag.replace_with('_' + tag.getText() + '_')
+
+    for tag in paragraph.find_all('code'):
+        tag.replace_with('`' + tag.getText() + '`')
+
+    for tag in paragraph.find_all('math'):
+        tag.replace_with('`' + escape_math(tag) + '`')
+
+    return ' '.join(paragraph.getText().split())
+
+def math_children(node):
+    children = []
+    for child in node.children:
+        if child.name is None: continue
+        children.append(child)
+    return children
+
+def escape_math(node):
+    return ' '.join(expand_math(node).split(" \t\r")).replace('δ ', 'δ')
+
+def expand_math(node):
+    if node.name is None or node.name in ['mi', 'mn', 'mo']:
+        text = node.getText().strip()
+        if text == '\u2061': return ''
+        return text
+
+    if node.name == 'mrow' or node.name == 'math':
+        return ' '.join([expand_math(c) for c in node.children])
+
+    if node.name == 'mfrac':
+        parts = math_children(node)
+        return f'{expand_math(parts[0])} / {expand_math(parts[1])}'
+
+    if node.name == 'mfenced':
+        open = node['open']
+        close = node['close']
+        return open + ' '.join([expand_math(c) for c in node.children]).strip() + close
+
+    if node.name == 'msup':
+        parts = math_children(node)
+        return expand_math(parts[0]) + '**' + expand_math(parts[1])
+
+    if node.name == 'msub':
+        parts = math_children(node)
+        return expand_math(parts[0]) + '_' + expand_math(parts[1])
+
+    if node.name == 'msubsup':
+        parts = math_children(node)
+        return (expand_math(parts[0])
+            + '_' + expand_math(parts[1])
+            + '^' + expand_math(parts[2]))
+
+    if node.name == 'mtable':
+        rows = node.find_all('mtr')
+        res = ''
+        for row in rows:
+            cols = row.find_all('mtd')
+            for col in cols:
+                res += ' '.join([expand_math(c) for c in col.children]) + '  '
+            res += '\n'
+        return res
+
+    if node.name == 'msqrt':
+        return f'sqrt({expand_math(node.contents[0])})'
+
+    raise Exception(f'unknown math node {node.name}: {node}')
 
 def parse_variable(node):
     tokens = tokenize(node.getText())
@@ -144,4 +216,5 @@ with open(output, 'w') as f:
         'comment': 'generated from docs.gl',
         'variables':variables,
         'functions':functions,
-    }, indent=4))
+    }, indent=4, ensure_ascii=False))
+

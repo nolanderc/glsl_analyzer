@@ -47,6 +47,6 @@ pub fn build(b: *std.Build) !void {
 fn compileGlslSpec(b: *std.Build) std.Build.LazyPath {
     const gen = std.Build.RunStep.create(b, "compile GLSL spec");
     gen.addArg("python3");
-    gen.addFileArg(.{ .path = b.pathFromRoot("./spec/gen_spec.py") });
+    gen.addFileArg(.{ .path = b.pathFromRoot("spec/gen_spec.py") });
     return gen.addOutputFileArg("glsl_spec.json");
 }

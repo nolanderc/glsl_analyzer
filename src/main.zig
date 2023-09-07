@@ -534,7 +534,7 @@ fn builtinCompletions(arena: std.mem.Allocator, spec: *const Spec) ![]lsp.Comple
         try completions.append(.{
             .label = variable.name,
             .labelDetails = .{
-                .detail = variable.type,
+                .detail = try signature.toOwnedSlice(),
             },
             .kind = .variable,
             .documentation = .{
@@ -545,28 +545,18 @@ fn builtinCompletions(arena: std.mem.Allocator, spec: *const Spec) ![]lsp.Comple
     }
 
     for (spec.functions) |function| {
-        var signature = std.ArrayList(u8).init(arena);
-        try signature.appendSlice(function.return_type);
-        try signature.appendSlice(" (");
-        for (function.parameters, 0..) |param, i| {
-            if (i != 0) try signature.appendSlice(", ");
-
-            if (param.optional) try signature.appendSlice("[");
-            if (param.modifier) |mod| {
-                try signature.appendSlice(@tagName(mod));
-                try signature.appendSlice(" ");
-            }
-            try signature.appendSlice(param.type);
-            if (param.optional) try signature.appendSlice("]");
-        }
-        try signature.appendSlice(")");
+        var anonymous_signature = std.ArrayList(u8).init(arena);
+        var named_signature = std.ArrayList(u8).init(arena);
+        try writeFunctionSignature(function, anonymous_signature.writer(), .{ .names = false });
+        try writeFunctionSignature(function, named_signature.writer(), .{ .names = true });
 
         try completions.append(.{
             .label = function.name,
             .labelDetails = .{
-                .detail = try signature.toOwnedSlice(),
+                .detail = try anonymous_signature.toOwnedSlice(),
             },
             .kind = .function,
+            .detail = try named_signature.toOwnedSlice(),
             .documentation = .{
                 .kind = .markdown,
                 .value = try std.mem.join(arena, "\n\n", function.description),
@@ -575,4 +565,30 @@ fn builtinCompletions(arena: std.mem.Allocator, spec: *const Spec) ![]lsp.Comple
     }
 
     return completions.toOwnedSlice();
+}
+
+fn writeFunctionSignature(function: Spec.Function, writer: anytype, options: struct { names: bool }) !void {
+    try writer.writeAll(function.return_type);
+    try writer.writeAll(" ");
+    if (options.names) try writer.writeAll(function.name);
+    try writer.writeAll("(");
+    for (function.parameters, 0..) |param, i| {
+        if (i != 0) try writer.writeAll(", ");
+        if (param.optional) try writer.writeAll("[");
+        if (param.modifier) |mod| {
+            try writer.writeAll(@tagName(mod));
+            try writer.writeAll(" ");
+        }
+        if (options.names) {
+            const array_start = std.mem.indexOfScalar(u8, param.type, '[') orelse param.type.len;
+            try writer.writeAll(param.type[0..array_start]);
+            try writer.writeAll(" ");
+            try writer.writeAll(param.name);
+            try writer.writeAll(param.type[array_start..]);
+        } else {
+            try writer.writeAll(param.type);
+        }
+        if (param.optional) try writer.writeAll("]");
+    }
+    try writer.writeAll(")");
 }

@@ -29,13 +29,6 @@ pub const Spec = struct {
         };
     };
 
-    pub const Modifier = enum {
-        in,
-        out,
-        inout,
-        @"const",
-    };
-
     const bytes = @embedFile("glsl_spec.json");
 
     pub fn load(allocator: std.mem.Allocator) !std.json.Parsed(Spec) {
@@ -53,4 +46,11 @@ pub const Spec = struct {
             return err;
         };
     }
+};
+
+pub const Modifier = enum {
+    in,
+    out,
+    inout,
+    @"const",
 };
