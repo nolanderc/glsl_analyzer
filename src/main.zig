@@ -7,7 +7,7 @@ const rpc = @import("jsonrpc.zig");
 const Response = rpc.Response;
 const Request = rpc.Request;
 
-const Spec = @import("spec.zig").Spec;
+const Spec = @import("Spec.zig");
 const Workspace = @import("Workspace.zig");
 const cli = @import("cli.zig");
 
@@ -149,14 +149,6 @@ fn logJsonError(err: []const u8, diagnostics: std.json.Diagnostics, bytes: []con
         err,
         std.zig.fmtEscapes(util.getJsonErrorContext(diagnostics, bytes)),
     });
-}
-
-fn getJsonErrorContext(diagnostics: std.json.Diagnostics, bytes: []const u8) []const u8 {
-    const offset = diagnostics.getByteOffset();
-    const start = std.mem.lastIndexOfScalar(u8, bytes[0..offset], '\n') orelse 0;
-    const end = std.mem.indexOfScalarPos(u8, bytes, offset, '\n') orelse bytes.len;
-    const line = bytes[@max(start, offset -| 20)..@min(end, offset +| 20)];
-    return line;
 }
 
 const HeaderValues = struct {
@@ -527,7 +519,7 @@ fn builtinCompletions(arena: std.mem.Allocator, spec: *const Spec) ![]lsp.Comple
 
     for (spec.variables) |variable| {
         var signature = std.ArrayList(u8).init(arena);
-        try signature.appendSlice(@tagName(variable.modifier));
+        try signature.writer().print("{}", .{variable.modifiers});
         try signature.appendSlice(" ");
         try signature.appendSlice(variable.type);
 
@@ -537,10 +529,10 @@ fn builtinCompletions(arena: std.mem.Allocator, spec: *const Spec) ![]lsp.Comple
                 .detail = try signature.toOwnedSlice(),
             },
             .kind = .variable,
-            .documentation = .{
+            .documentation = if (variable.description) |desc| .{
                 .kind = .markdown,
-                .value = try std.mem.join(arena, "\n\n", variable.description),
-            },
+                .value = try std.mem.join(arena, "\n\n", desc),
+            } else null,
         });
     }
 
@@ -557,10 +549,10 @@ fn builtinCompletions(arena: std.mem.Allocator, spec: *const Spec) ![]lsp.Comple
             },
             .kind = .function,
             .detail = try named_signature.toOwnedSlice(),
-            .documentation = .{
+            .documentation = if (function.description) |desc| .{
                 .kind = .markdown,
-                .value = try std.mem.join(arena, "\n\n", function.description),
-            },
+                .value = try std.mem.join(arena, "\n\n", desc),
+            } else null,
         });
     }
 
@@ -575,8 +567,8 @@ fn writeFunctionSignature(function: Spec.Function, writer: anytype, options: str
     for (function.parameters, 0..) |param, i| {
         if (i != 0) try writer.writeAll(", ");
         if (param.optional) try writer.writeAll("[");
-        if (param.modifier) |mod| {
-            try writer.writeAll(@tagName(mod));
+        if (param.modifiers) |modifiers| {
+            try writer.print("{}", .{modifiers});
             try writer.writeAll(" ");
         }
         if (options.names) {

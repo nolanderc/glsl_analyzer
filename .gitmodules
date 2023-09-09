@@ -1,3 +1,6 @@
 [submodule "spec/docs.gl"]
 	path = spec/docs.gl
 	url = https://github.com/BSVino/docs.gl
+[submodule "spec/GLSL"]
+	path = spec/GLSL
+	url = https://github.com/KhronosGroup/GLSL

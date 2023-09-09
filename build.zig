@@ -13,7 +13,9 @@ pub fn build(b: *std.Build) !void {
     exe.linkLibC();
 
     {
-        exe.addAnonymousModule("glsl_spec.json", .{ .source_file = compileGlslSpec(b) });
+        exe.addAnonymousModule("glsl_spec.json", .{ .source_file = .{
+            .path = b.pathFromRoot("spec/spec.json"),
+        } });
 
         const options = b.addOptions();
         const build_root_path = try std.fs.path.resolve(b.allocator, &.{b.build_root.path orelse "."});
@@ -42,11 +44,4 @@ pub fn build(b: *std.Build) !void {
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_unit_tests.step);
-}
-
-fn compileGlslSpec(b: *std.Build) std.Build.LazyPath {
-    const gen = std.Build.RunStep.create(b, "compile GLSL spec");
-    gen.addArg("python3");
-    gen.addFileArg(.{ .path = b.pathFromRoot("spec/gen_spec.py") });
-    return gen.addOutputFileArg("glsl_spec.json");
 }

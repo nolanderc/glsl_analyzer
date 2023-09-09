@@ -27,3 +27,6 @@ install prefix="$HOME/.local/":
 stderr:
     tail --follow stderr.log
 
+generate-spec:
+    cd spec && just
+
