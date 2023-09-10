@@ -5,3 +5,5 @@ generate-spec:
 watch:
     watchexec -e py -c -- just generate-spec
 
+download-html-spec:
+    wget https://registry.khronos.org/OpenGL/specs/gl/GLSLangSpec.4.60.html

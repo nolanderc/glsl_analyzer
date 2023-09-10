@@ -13426,7 +13426,7 @@
                 }
             ],
             "description": [
-                "`length` returns the length of the vector. i.e., ` sqrt() `"
+                "`length` returns the length of the vector. i.e., ` sqrt( x [ 0 ] **2 + x [ 1 ] **2 + …) `"
             ],
             "versions": [
                 110,
@@ -13453,7 +13453,7 @@
                 }
             ],
             "description": [
-                "`length` returns the length of the vector. i.e., ` sqrt() `"
+                "`length` returns the length of the vector. i.e., ` sqrt( x [ 0 ] **2 + x [ 1 ] **2 + …) `"
             ],
             "versions": [
                 400,

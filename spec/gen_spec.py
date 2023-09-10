@@ -116,7 +116,8 @@ def expand_math(node):
         return res
 
     if node.name == 'msqrt':
-        return f'sqrt({expand_math(node.contents[0])})'
+        inner = ' '.join([expand_math(c) for c in math_children(node)])
+        return f'sqrt({inner})'
 
     raise Exception(f'unknown math node {node.name}: {node}')
 
