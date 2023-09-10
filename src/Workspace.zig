@@ -14,7 +14,11 @@ pub fn deinit(self: *Workspace, allocator: std.mem.Allocator) void {
     self.documents.deinit(allocator);
 }
 
-pub fn getOrCreateFile(
+pub fn getDocument(self: *Workspace, document: lsp.TextDocumentIdentifier) ?*Document {
+    return self.documents.getPtr(document.uri);
+}
+
+pub fn getOrCreateDocument(
     self: *Workspace,
     allocator: std.mem.Allocator,
     document: lsp.VersionedTextDocumentIdentifier,
@@ -71,4 +75,25 @@ pub const Document = struct {
 
         return @intCast(i + codepoints.i);
     }
+
+    fn getByte(self: @This(), index: usize) u8 {
+        return self.contents.items[index];
+    }
+
+    pub fn wordUnderCursor(self: *@This(), cursor: lsp.Position) []const u8 {
+        const offset = self.utf8FromPosition(cursor);
+
+        var start = offset;
+        var end = offset;
+
+        const bytes = self.contents.items;
+        while (start > 0 and isIdentifierChar(bytes[start - 1])) start -= 1;
+        while (end < bytes.len and isIdentifierChar(bytes[end])) end += 1;
+
+        return bytes[start..end];
+    }
 };
+
+fn isIdentifierChar(c: u8) bool {
+    return std.ascii.isAlphanumeric(c) or c == '_';
+}

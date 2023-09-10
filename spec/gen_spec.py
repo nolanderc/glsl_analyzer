@@ -123,6 +123,8 @@ def expand_math(node):
 modifier_keywords = ['out', 'in', 'inout', 'const', 'highp', 'lowp', 'perprimitiveEXT']
 modifier_regex = '(' + '|'.join(modifier_keywords) + ')'
 
+type_regex = r'(void|int|float|double|bool|\w*(vec|mat|gen\w*Type)\w*)'
+
 def parse_variable(text):
     tokens = tokenize(text)
 
@@ -355,7 +357,7 @@ def find_prototypes(text):
                 proto['description'] = description
 
             return_type = proto['return_type']
-            if re.match(r'.*(void|int|float|double|vec|mat|bool|gen\w*Type).*', return_type) is not None:
+            if re.search(type_regex, return_type) is not None:
                 yield proto
             else:
                 known_invalid_pattern = r'(functions?|of|enable|the|and|to|call|with|if|as|in)'
@@ -375,60 +377,66 @@ def process_extension_file(path):
         for match in re.finditer(r'\s+#extension (\w+)\s*:\s*<\w+>', text):
             extension_names.append(text[match.start(1):match.end(1)])
 
-        implicit_extensions = ['GL_KHR_vulkan_glsl.txt', 'GL_EXT_vulkan_glsl_relaxed.txt']
+        implicit_extensions = [
+            'GL_KHR_vulkan_glsl.txt',
+            'GL_EXT_vulkan_glsl_relaxed.txt',
+            'GLSL_EXT_shader_subgroup_extended_types.txt',
+        ]
+
         if len(extension_names) == 0:
             if filename not in implicit_extensions:
                 print('missing extension names:', name)
                 exit(0)
 
+        if filename in implicit_extensions: return
+
         prototypes = []
         vardecls = []
 
-        if filename not in implicit_extensions:
-            for section in find_matching_groups(groups, re.compile(r'chapter 7|section 7\.\d+', re.IGNORECASE)):
-                section_text = '\n'.join(flatten(section))
-                for match in re.finditer(r'(' + modifier_regex + r'\s+)+\w+\s+gl_\w+(\s*=\s*\w+)?;', section_text, re.MULTILINE):
-                    match_text = section_text[match.start():match.end()]
-                    vardecls.append(parse_variable(match_text))
+        for section in find_matching_groups(groups, re.compile(r'chapter 7|section 7\.\d+', re.IGNORECASE)):
+            section_text = '\n'.join(flatten(section))
+            for match in re.finditer(r'(' + modifier_regex + r'\s+)+\w+\s+gl_\w+(\s*=\s*\w+)?;', section_text, re.MULTILINE):
+                match_text = section_text[match.start():match.end()]
+                vardecls.append(parse_variable(match_text))
 
-            pattern = re.compile('(' + '|'.join([
-                    r'variables?\s+<?gl_\w+>?',
-                    r'<?gl_\w+(\?\?\w+)?>?variables?\s+',
-                ]) + ')', re.IGNORECASE)
-            for section in find_matching_groups(groups, pattern):
-                while isinstance(section[-1], list) or section[-1] == '':
-                    section = section[:-1]
+        pattern = re.compile('(' + '|'.join([
+                r'variables?\s+<?gl_\w+>?',
+                r'<?gl_\w+(\?\?\w+)?>?variables?\s+',
+            ]) + ')', re.IGNORECASE)
+        for section in find_matching_groups(groups, pattern):
+            while isinstance(section[-1], list) or section[-1] == '':
+                section = section[:-1]
 
-                i = 0
-                while i < len(section):
-                    if section[i] == '' or section[i].isspace(): 
-                        i += 1
-                        continue
+            i = 0
+            while i < len(section):
+                if section[i] == '' or section[i].isspace(): 
+                    i += 1
+                    continue
 
-                    start = i
-                    while i < len(section) and section[i] != '': i += 1
-                    text = '\n'.join(section[start:i])
+                start = i
+                while i < len(section) and section[i] != '': i += 1
+                text = '\n'.join(section[start:i])
 
-                    match = re.search(r'(variables?)?(,?(\s+and)?\s+<?gl_\w+(\?\?\w+)?>?)+(\s+(variables?|is\s+available))?', text)
-                    if match is None: continue
+                match = re.search(r'(variables?)?(,?(\s+and)?\s+<?gl_\w+(\?\?\w+)?>?)+(\s+(variables?|is\s+available))?', text)
+                if match is None: continue
 
-                    matches = re.findall('(gl_\w+(\?\?\w+)?)', match.group())
-                    if len(matches) == 0: i += 1; continue
-                    names = [match[0] for match in matches]
+                matches = re.findall('(gl_\w+(\?\?\w+)?)', match.group())
+                if len(matches) == 0: i += 1; continue
+                names = [match[0] for match in matches]
 
-                    if '??' in names[0]:
-                        variants = ['Eq', 'Ge', 'Gt', 'Le', 'Lt']
-                        names = [names[0].replace('??', v) for v in variants]
+                if '??' in names[0]:
+                    variants = ['Eq', 'Ge', 'Gt', 'Le', 'Lt']
+                    names = [names[0].replace('??', v) for v in variants]
 
-                    for name in names:
-                        found = False
-                        for var in vardecls:
-                            if var['name'] == name:
-                                found = True
-                                if 'description' not in var:
-                                    var['description'] = [text]
-                        if not found:
-                            print('unknown variable:', name)
+                for name in names:
+                    found = False
+                    for var in vardecls:
+                        if var['name'] == name:
+                            found = True
+                            if 'description' not in var:
+                                var['description'] = [text]
+                    if not found:
+                        print('unknown variable:', name)
 
         for section in find_matching_groups(groups, re.compile(r'chapter 8|section 8\.\d+', re.IGNORECASE)):
             for prototype in find_prototypes('\n'.join(flatten(section))):
@@ -452,7 +460,6 @@ def process_extension_file(path):
                             proto['description'] = text.split('\n\n')
                 if not found:
                     print('unknown function:', name)
-
 
 
         for proto in prototypes + vardecls:
@@ -483,18 +490,17 @@ def process_extension_file(path):
 def escape_code(text):
     result = ''
     last = 0
-    for match in re.finditer(r'\w+(\([^()]*\))?', text):
+    for match in re.finditer(r'<?\w+(\([^()]*\))?>?', text):
         result += text[last:match.start()]
-        word = text[match.start():match.end()]
-        if '_' in word or word[-1] == ')':
-            result += '`' + word + '`'
+        word = match.group()
+        if word[0] == '<' or '_' in word or word[-1] == ')':
+            result += '`' + word.strip('<>') + '`'
         else:
             result += word
         last = match.end()
 
     result += text[last:]
     return result
-
 
 
 output = sys.argv[1]
@@ -511,13 +517,13 @@ def progress(info):
     print(f'{work}/{total_work}: {info}')
     work += 1
 
-for i, path in enumerate(extension_files):
-    progress(path)
-    process_extension_file(path)
-
 for i, path in enumerate(docs_files):
     progress(path)
     process_docs_gl_file(path)
+
+for i, path in enumerate(extension_files):
+    progress(path)
+    process_extension_file(path)
 
 variables.append({
     'modifiers': 'in',
@@ -545,6 +551,9 @@ variables.append({
     'versions': [450],
 })
 
+
+variables.sort(key=lambda x: x['name'])
+functions.sort(key=lambda x: x['name'])
 
 with open(output, 'w') as f:
     f.write(json.dumps({

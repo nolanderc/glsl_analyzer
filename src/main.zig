@@ -331,12 +331,30 @@ pub const Dispatch = struct {
         "initialize",
         "initialized",
         "shutdown",
-        "textDocument/completion",
         "textDocument/didOpen",
         "textDocument/didClose",
         "textDocument/didSave",
         "textDocument/didChange",
+        "textDocument/completion",
+        "textDocument/hover",
     };
+
+    fn parseParams(comptime T: type, state: *State, request: *Request) !std.json.Parsed(T) {
+        return std.json.parseFromValue(T, state.allocator, request.params, .{
+            .ignore_unknown_fields = true,
+        });
+    }
+
+    fn getDocumentOrFail(
+        state: *State,
+        request: *Request,
+        id: lsp.TextDocumentIdentifier,
+    ) !*Workspace.Document {
+        return state.workspace.getDocument(id) orelse state.fail(request.id, .{
+            .code = .invalid_params,
+            .message = "document not found",
+        });
+    }
 
     pub const InitializeParams = struct {
         processId: ?c_int = null,
@@ -368,6 +386,7 @@ pub const Dispatch = struct {
                     .willSaveWaitUntil = false,
                     .save = .{ .includeText = false },
                 },
+                .hoverProvider = true,
             },
             .serverInfo = .{ .name = "glsl_analyzer" },
         });
@@ -404,7 +423,7 @@ pub const Dispatch = struct {
             document.text.len,
         });
 
-        const file = try state.workspace.getOrCreateFile(state.allocator, document.versioned());
+        const file = try state.workspace.getOrCreateDocument(state.allocator, document.versioned());
         try file.replaceAll(state.allocator, document.text);
 
         return;
@@ -438,6 +457,32 @@ pub const Dispatch = struct {
         return;
     }
 
+    pub const DidChangeParams = struct {
+        textDocument: lsp.VersionedTextDocumentIdentifier,
+        contentChanges: []const lsp.TextDocumentContentChangeEvent,
+    };
+
+    pub fn @"textDocument/didChange"(state: *State, request: *Request) !void {
+        const params = try parseParams(DidChangeParams, state, request);
+        defer params.deinit();
+
+        std.log.debug("didChange: {s}", .{params.value.textDocument.uri});
+        const file: *Workspace.Document = try state.workspace.getOrCreateDocument(
+            state.allocator,
+            params.value.textDocument,
+        );
+
+        for (params.value.contentChanges) |change| {
+            if (change.range) |range| {
+                try file.replace(state.allocator, range, change.text);
+            } else {
+                try file.replaceAll(state.allocator, change.text);
+            }
+        }
+
+        file.version = params.value.textDocument.version;
+    }
+
     pub const CompletionParams = struct {
         textDocument: lsp.TextDocumentIdentifier,
         position: lsp.Position,
@@ -457,35 +502,33 @@ pub const Dispatch = struct {
         try state.success(request.id, completions.items);
     }
 
-    pub const DidChangeParams = struct {
-        textDocument: lsp.VersionedTextDocumentIdentifier,
-        contentChanges: []const lsp.TextDocumentContentChangeEvent,
+    pub const HoverParams = struct {
+        textDocument: lsp.TextDocumentIdentifier,
+        position: lsp.Position,
     };
 
-    pub fn @"textDocument/didChange"(state: *State, request: *Request) !void {
-        const params = try parseParams(DidChangeParams, state, request);
+    pub fn @"textDocument/hover"(state: *State, request: *Request) !void {
+        const params = try parseParams(HoverParams, state, request);
         defer params.deinit();
 
-        std.log.debug("didChange: {s}", .{params.value.textDocument.uri});
-        const file: *Workspace.Document = try state.workspace.getOrCreateFile(
-            state.allocator,
-            params.value.textDocument,
-        );
+        std.log.debug("hover: {} {s}", .{ params.value.position, params.value.textDocument.uri });
 
-        for (params.value.contentChanges) |change| {
-            if (change.range) |range| {
-                try file.replace(state.allocator, range, change.text);
-            } else {
-                try file.replaceAll(state.allocator, change.text);
+        const document = try getDocumentOrFail(state, request, params.value.textDocument);
+        const word = document.wordUnderCursor(params.value.position);
+
+        std.log.debug("hover word: '{'}'", .{std.zig.fmtEscapes(word)});
+
+        const contents = for (state.builtin_completions) |*completion| {
+            if (std.mem.eql(u8, completion.label, word)) {
+                if (completion.documentation) |*doc| break doc;
+                std.log.debug("item without documentation: '{'}'", .{std.zig.fmtEscapes(completion.label)});
             }
-        }
+        } else {
+            return state.success(request.id, null);
+        };
 
-        file.version = params.value.textDocument.version;
-    }
-
-    fn parseParams(comptime T: type, state: *State, request: *Request) !std.json.Parsed(T) {
-        return std.json.parseFromValue(T, state.allocator, request.params, .{
-            .ignore_unknown_fields = true,
+        try state.success(request.id, .{
+            .contents = contents,
         });
     }
 };
@@ -494,9 +537,12 @@ fn builtinCompletions(arena: std.mem.Allocator, spec: *const Spec) ![]lsp.Comple
     var completions = std.ArrayList(lsp.CompletionItem).init(arena);
 
     const types = [_][]const u8{
+        "void",
+        "bool",
         "int",
         "uint",
         "float",
+        "double",
         "vec2",
         "vec3",
         "vec4",
@@ -506,6 +552,12 @@ fn builtinCompletions(arena: std.mem.Allocator, spec: *const Spec) ![]lsp.Comple
         "uvec2",
         "uvec3",
         "uvec4",
+        "bvec2",
+        "bvec3",
+        "bvec4",
+        "dvec2",
+        "dvec3",
+        "dvec4",
         "mat2",
         "mat3",
         "mat4",
