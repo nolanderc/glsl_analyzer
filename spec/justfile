@@ -1,6 +1,6 @@
 
 generate-spec:
-    ./gen_spec.py spec.json
+    `which pypy3 || which python3` ./gen_spec.py spec.json
 
 watch:
     watchexec -e py -c -- just generate-spec

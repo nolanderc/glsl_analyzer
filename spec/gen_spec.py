@@ -5,12 +5,81 @@ import os
 from glob import iglob
 import json
 from bs4 import BeautifulSoup
-import progressbar
 import tokenize
 import re
 
+keywords = []
+types = []
+operators = []
 variables = []
 functions = []
+
+def process_glsl_html_spec(path):
+    with open(path, 'r') as f:
+        soup = BeautifulSoup(f, 'html.parser')
+
+    keywords_section = soup.find(id='keywords').parent
+    for index, dl in enumerate(keywords_section.find_all('dl')):
+        names = [t.getText() for t in dl.find_all('strong')]
+
+        kind = 'glsl'
+        if index == 1: kind = 'vulkan'
+        if index == 2: kind = 'reserved'
+
+        for name in names:
+            keywords.append({
+                'name': name,
+                'kind': kind,
+            })
+
+    basic_types_section = soup.find(id='basic-types').parent
+    for table in basic_types_section.find_all('table'):
+        headers = table.find_all('th')
+        if headers[0].getText() != 'Type': continue
+        if headers[1].getText() != 'Meaning': continue
+        rows = table.find('tbody').find_all('tr')
+
+        for row in rows:
+            name_cell, meaning_cell = row.find_all('td')
+            names = name_cell.getText().splitlines()
+            meaning = ' '.join(meaning_cell.getText().split())
+
+            for name in names:
+                types.append({
+                    'name': name,
+                    'description': [meaning],
+                })
+
+    operators_section = soup.find(id='operators').parent
+    operator_table = operators_section.find('table')
+    headers = operator_table.find_all('th')
+    assert headers[0].getText() == 'Precedence'
+    assert headers[1].getText() == 'Operator Class'
+    assert headers[2].getText() == 'Operators'
+    assert headers[3].getText() == 'Associativity'
+
+    rows = operator_table.find('tbody').find_all('tr')
+    ignored_operators = ['(', ')', '[', ']', '.', ',']
+    for row in rows:
+        precedence, operator_class, operator_words, associativity = row.find_all('td')
+
+        precedence_number = int(precedence.getText().split()[0])
+        left_to_right = associativity.getText() == 'Left to Right'
+
+        operator_class = operator_class.getText()
+        kind = 'infix'
+        if 'prefix' in operator_class: kind = 'prefix'
+        if 'post fix' in operator_class: kind = 'postfix'
+
+        for word in operator_words.getText().split():
+            if word in ignored_operators: continue
+            operators.append({
+                'name': word,
+                'precedence': precedence_number,
+                'left_to_right': left_to_right,
+                'kind': kind,
+            })
+
 
 def process_docs_gl_file(path):
     is_variable = os.path.basename(path).startswith('gl_')
@@ -50,7 +119,7 @@ def process_docs_gl_file(path):
 
 def paragraph_to_markdown(paragraph):
     if paragraph.math is not None and paragraph.math.mtable is not None:
-        return '```\n' + expand_math(paragraph.math.mtable) + '\n```\n'
+        return '```\n' + expand_math(paragraph.math.mtable).replace('δ  ', 'δ') + '\n```\n'
 
     for tag in paragraph.find_all('em'):
         tag.replace_with('_' + tag.getText() + '_')
@@ -71,7 +140,7 @@ def math_children(node):
     return children
 
 def escape_math(node):
-    return ' '.join(expand_math(node).split(" \t\r")).replace('δ ', 'δ')
+    return ' '.join(expand_math(node).split(" \t\r")).replace('δ  ', 'δ')
 
 def expand_math(node):
     if node.name is None or node.name in ['mi', 'mn', 'mo']:
@@ -506,17 +575,21 @@ def escape_code(text):
 
 output = sys.argv[1]
 
-scriptdir = os.path.dirname(sys.argv[0])
+scriptdir = os.path.dirname(sys.argv[0]) or '.'
 extension_files = [f for f in iglob(f'{scriptdir}/GLSL/extensions/*/*.txt')]
 docs_files = [f for f in iglob(f'{scriptdir}/docs.gl/sl4/*.xhtml')]
+glsl_html_spec = f'{scriptdir}/GLSLangSpec.4.60.html'
 
 work = 0
-total_work = len(extension_files) + len(docs_files)
+total_work = len(extension_files) + len(docs_files) + 1
 
 def progress(info):
     global work
     print(f'{work}/{total_work}: {info}')
     work += 1
+
+progress(glsl_html_spec)
+process_glsl_html_spec(glsl_html_spec)
 
 for i, path in enumerate(docs_files):
     progress(path)
@@ -553,14 +626,20 @@ variables.append({
 })
 
 
+keywords.sort(key=lambda x: x['name'])
+operators.sort(key=lambda x: x['name'])
+types.sort(key=lambda x: x['name'])
 variables.sort(key=lambda x: x['name'])
 functions.sort(key=lambda x: x['name'])
 
 with open(output, 'w') as f:
     f.write(json.dumps({
         'comment': 'generated from docs.gl',
-        'variables':variables,
-        'functions':functions,
+        'keywords': keywords,
+        'operators': operators,
+        'types': types,
+        'variables': variables,
+        'functions': functions,
     }, indent=4, ensure_ascii=False))
 
 progress('done')

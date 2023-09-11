@@ -536,37 +536,40 @@ pub const Dispatch = struct {
 fn builtinCompletions(arena: std.mem.Allocator, spec: *const Spec) ![]lsp.CompletionItem {
     var completions = std.ArrayList(lsp.CompletionItem).init(arena);
 
-    const types = [_][]const u8{
-        "void",
-        "bool",
-        "int",
-        "uint",
-        "float",
-        "double",
-        "vec2",
-        "vec3",
-        "vec4",
-        "ivec2",
-        "ivec3",
-        "ivec4",
-        "uvec2",
-        "uvec3",
-        "uvec4",
-        "bvec2",
-        "bvec3",
-        "bvec4",
-        "dvec2",
-        "dvec3",
-        "dvec4",
-        "mat2",
-        "mat3",
-        "mat4",
-    };
+    try completions.ensureUnusedCapacity(
+        spec.types.len + spec.variables.len + spec.functions.len,
+    );
 
-    try completions.ensureUnusedCapacity(types.len + spec.variables.len + spec.functions.len);
+    for (spec.types) |typ| {
+        try completions.append(.{
+            .label = typ.name,
+            .kind = .class,
+            .documentation = .{
+                .kind = .markdown,
+                .value = try std.mem.join(arena, "\n\n", typ.description),
+            },
+        });
+    }
 
-    for (types) |name| {
-        try completions.append(.{ .label = name, .kind = .class });
+    keywords: for (spec.keywords) |keyword| {
+        for (spec.types) |typ| {
+            if (std.mem.eql(u8, keyword.name, typ.name)) {
+                continue :keywords;
+            }
+        }
+
+        try completions.append(.{
+            .label = keyword.name,
+            .kind = .keyword,
+            .documentation = .{
+                .kind = .markdown,
+                .value = switch (keyword.kind) {
+                    .glsl => "Available in standard GLSL.",
+                    .vulkan => "Only available when targeting Vulkan.",
+                    .reserved => "Reserved for future use.",
+                },
+            },
+        });
     }
 
     for (spec.variables) |variable| {

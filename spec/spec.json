@@ -1,5 +1,2179 @@
 {
     "comment": "generated from docs.gl",
+    "keywords": [
+        {
+            "name": "active",
+            "kind": "reserved"
+        },
+        {
+            "name": "asm",
+            "kind": "reserved"
+        },
+        {
+            "name": "atomic_uint",
+            "kind": "glsl"
+        },
+        {
+            "name": "attribute",
+            "kind": "glsl"
+        },
+        {
+            "name": "bool",
+            "kind": "glsl"
+        },
+        {
+            "name": "break",
+            "kind": "glsl"
+        },
+        {
+            "name": "buffer",
+            "kind": "glsl"
+        },
+        {
+            "name": "bvec2",
+            "kind": "glsl"
+        },
+        {
+            "name": "bvec3",
+            "kind": "glsl"
+        },
+        {
+            "name": "bvec4",
+            "kind": "glsl"
+        },
+        {
+            "name": "case",
+            "kind": "glsl"
+        },
+        {
+            "name": "cast",
+            "kind": "reserved"
+        },
+        {
+            "name": "centroid",
+            "kind": "glsl"
+        },
+        {
+            "name": "class",
+            "kind": "reserved"
+        },
+        {
+            "name": "coherent",
+            "kind": "glsl"
+        },
+        {
+            "name": "common",
+            "kind": "reserved"
+        },
+        {
+            "name": "const",
+            "kind": "glsl"
+        },
+        {
+            "name": "continue",
+            "kind": "glsl"
+        },
+        {
+            "name": "default",
+            "kind": "glsl"
+        },
+        {
+            "name": "discard",
+            "kind": "glsl"
+        },
+        {
+            "name": "dmat2",
+            "kind": "glsl"
+        },
+        {
+            "name": "dmat2x2",
+            "kind": "glsl"
+        },
+        {
+            "name": "dmat2x3",
+            "kind": "glsl"
+        },
+        {
+            "name": "dmat2x4",
+            "kind": "glsl"
+        },
+        {
+            "name": "dmat3",
+            "kind": "glsl"
+        },
+        {
+            "name": "dmat3x2",
+            "kind": "glsl"
+        },
+        {
+            "name": "dmat3x3",
+            "kind": "glsl"
+        },
+        {
+            "name": "dmat3x4",
+            "kind": "glsl"
+        },
+        {
+            "name": "dmat4",
+            "kind": "glsl"
+        },
+        {
+            "name": "dmat4x2",
+            "kind": "glsl"
+        },
+        {
+            "name": "dmat4x3",
+            "kind": "glsl"
+        },
+        {
+            "name": "dmat4x4",
+            "kind": "glsl"
+        },
+        {
+            "name": "do",
+            "kind": "glsl"
+        },
+        {
+            "name": "double",
+            "kind": "glsl"
+        },
+        {
+            "name": "dvec2",
+            "kind": "glsl"
+        },
+        {
+            "name": "dvec3",
+            "kind": "glsl"
+        },
+        {
+            "name": "dvec4",
+            "kind": "glsl"
+        },
+        {
+            "name": "else",
+            "kind": "glsl"
+        },
+        {
+            "name": "enum",
+            "kind": "reserved"
+        },
+        {
+            "name": "extern",
+            "kind": "reserved"
+        },
+        {
+            "name": "external",
+            "kind": "reserved"
+        },
+        {
+            "name": "false",
+            "kind": "glsl"
+        },
+        {
+            "name": "filter",
+            "kind": "reserved"
+        },
+        {
+            "name": "fixed",
+            "kind": "reserved"
+        },
+        {
+            "name": "flat",
+            "kind": "glsl"
+        },
+        {
+            "name": "float",
+            "kind": "glsl"
+        },
+        {
+            "name": "for",
+            "kind": "glsl"
+        },
+        {
+            "name": "fvec2",
+            "kind": "reserved"
+        },
+        {
+            "name": "fvec3",
+            "kind": "reserved"
+        },
+        {
+            "name": "fvec4",
+            "kind": "reserved"
+        },
+        {
+            "name": "goto",
+            "kind": "reserved"
+        },
+        {
+            "name": "half",
+            "kind": "reserved"
+        },
+        {
+            "name": "highp",
+            "kind": "glsl"
+        },
+        {
+            "name": "hvec2",
+            "kind": "reserved"
+        },
+        {
+            "name": "hvec3",
+            "kind": "reserved"
+        },
+        {
+            "name": "hvec4",
+            "kind": "reserved"
+        },
+        {
+            "name": "if",
+            "kind": "glsl"
+        },
+        {
+            "name": "iimage1D",
+            "kind": "glsl"
+        },
+        {
+            "name": "iimage1DArray",
+            "kind": "glsl"
+        },
+        {
+            "name": "iimage2D",
+            "kind": "glsl"
+        },
+        {
+            "name": "iimage2DArray",
+            "kind": "glsl"
+        },
+        {
+            "name": "iimage2DMS",
+            "kind": "glsl"
+        },
+        {
+            "name": "iimage2DMSArray",
+            "kind": "glsl"
+        },
+        {
+            "name": "iimage2DRect",
+            "kind": "glsl"
+        },
+        {
+            "name": "iimage3D",
+            "kind": "glsl"
+        },
+        {
+            "name": "iimageBuffer",
+            "kind": "glsl"
+        },
+        {
+            "name": "iimageCube",
+            "kind": "glsl"
+        },
+        {
+            "name": "iimageCubeArray",
+            "kind": "glsl"
+        },
+        {
+            "name": "image1D",
+            "kind": "glsl"
+        },
+        {
+            "name": "image1DArray",
+            "kind": "glsl"
+        },
+        {
+            "name": "image2D",
+            "kind": "glsl"
+        },
+        {
+            "name": "image2DArray",
+            "kind": "glsl"
+        },
+        {
+            "name": "image2DMS",
+            "kind": "glsl"
+        },
+        {
+            "name": "image2DMSArray",
+            "kind": "glsl"
+        },
+        {
+            "name": "image2DRect",
+            "kind": "glsl"
+        },
+        {
+            "name": "image3D",
+            "kind": "glsl"
+        },
+        {
+            "name": "imageBuffer",
+            "kind": "glsl"
+        },
+        {
+            "name": "imageCube",
+            "kind": "glsl"
+        },
+        {
+            "name": "imageCubeArray",
+            "kind": "glsl"
+        },
+        {
+            "name": "in",
+            "kind": "glsl"
+        },
+        {
+            "name": "inline",
+            "kind": "reserved"
+        },
+        {
+            "name": "inout",
+            "kind": "glsl"
+        },
+        {
+            "name": "input",
+            "kind": "reserved"
+        },
+        {
+            "name": "int",
+            "kind": "glsl"
+        },
+        {
+            "name": "interface",
+            "kind": "reserved"
+        },
+        {
+            "name": "invariant",
+            "kind": "glsl"
+        },
+        {
+            "name": "isampler1D",
+            "kind": "glsl"
+        },
+        {
+            "name": "isampler1DArray",
+            "kind": "glsl"
+        },
+        {
+            "name": "isampler2D",
+            "kind": "glsl"
+        },
+        {
+            "name": "isampler2DArray",
+            "kind": "glsl"
+        },
+        {
+            "name": "isampler2DMS",
+            "kind": "glsl"
+        },
+        {
+            "name": "isampler2DMSArray",
+            "kind": "glsl"
+        },
+        {
+            "name": "isampler2DRect",
+            "kind": "glsl"
+        },
+        {
+            "name": "isampler3D",
+            "kind": "glsl"
+        },
+        {
+            "name": "isamplerBuffer",
+            "kind": "glsl"
+        },
+        {
+            "name": "isamplerCube",
+            "kind": "glsl"
+        },
+        {
+            "name": "isamplerCubeArray",
+            "kind": "glsl"
+        },
+        {
+            "name": "isubpassInput",
+            "kind": "vulkan"
+        },
+        {
+            "name": "isubpassInputMS",
+            "kind": "vulkan"
+        },
+        {
+            "name": "itexture1D",
+            "kind": "vulkan"
+        },
+        {
+            "name": "itexture1DArray",
+            "kind": "vulkan"
+        },
+        {
+            "name": "itexture2D",
+            "kind": "vulkan"
+        },
+        {
+            "name": "itexture2DArray",
+            "kind": "vulkan"
+        },
+        {
+            "name": "itexture2DMS",
+            "kind": "vulkan"
+        },
+        {
+            "name": "itexture2DMSArray",
+            "kind": "vulkan"
+        },
+        {
+            "name": "itexture2DRect",
+            "kind": "vulkan"
+        },
+        {
+            "name": "itexture3D",
+            "kind": "vulkan"
+        },
+        {
+            "name": "itextureBuffer",
+            "kind": "vulkan"
+        },
+        {
+            "name": "itextureCube",
+            "kind": "vulkan"
+        },
+        {
+            "name": "itextureCubeArray",
+            "kind": "vulkan"
+        },
+        {
+            "name": "ivec2",
+            "kind": "glsl"
+        },
+        {
+            "name": "ivec3",
+            "kind": "glsl"
+        },
+        {
+            "name": "ivec4",
+            "kind": "glsl"
+        },
+        {
+            "name": "layout",
+            "kind": "glsl"
+        },
+        {
+            "name": "long",
+            "kind": "reserved"
+        },
+        {
+            "name": "lowp",
+            "kind": "glsl"
+        },
+        {
+            "name": "mat2",
+            "kind": "glsl"
+        },
+        {
+            "name": "mat2x2",
+            "kind": "glsl"
+        },
+        {
+            "name": "mat2x3",
+            "kind": "glsl"
+        },
+        {
+            "name": "mat2x4",
+            "kind": "glsl"
+        },
+        {
+            "name": "mat3",
+            "kind": "glsl"
+        },
+        {
+            "name": "mat3x2",
+            "kind": "glsl"
+        },
+        {
+            "name": "mat3x3",
+            "kind": "glsl"
+        },
+        {
+            "name": "mat3x4",
+            "kind": "glsl"
+        },
+        {
+            "name": "mat4",
+            "kind": "glsl"
+        },
+        {
+            "name": "mat4x2",
+            "kind": "glsl"
+        },
+        {
+            "name": "mat4x3",
+            "kind": "glsl"
+        },
+        {
+            "name": "mat4x4",
+            "kind": "glsl"
+        },
+        {
+            "name": "mediump",
+            "kind": "glsl"
+        },
+        {
+            "name": "namespace",
+            "kind": "reserved"
+        },
+        {
+            "name": "noinline",
+            "kind": "reserved"
+        },
+        {
+            "name": "noperspective",
+            "kind": "glsl"
+        },
+        {
+            "name": "out",
+            "kind": "glsl"
+        },
+        {
+            "name": "output",
+            "kind": "reserved"
+        },
+        {
+            "name": "partition",
+            "kind": "reserved"
+        },
+        {
+            "name": "patch",
+            "kind": "glsl"
+        },
+        {
+            "name": "precise",
+            "kind": "glsl"
+        },
+        {
+            "name": "precision",
+            "kind": "glsl"
+        },
+        {
+            "name": "public",
+            "kind": "reserved"
+        },
+        {
+            "name": "readonly",
+            "kind": "glsl"
+        },
+        {
+            "name": "resource",
+            "kind": "reserved"
+        },
+        {
+            "name": "restrict",
+            "kind": "glsl"
+        },
+        {
+            "name": "return",
+            "kind": "glsl"
+        },
+        {
+            "name": "sample",
+            "kind": "glsl"
+        },
+        {
+            "name": "sampler",
+            "kind": "vulkan"
+        },
+        {
+            "name": "sampler1D",
+            "kind": "glsl"
+        },
+        {
+            "name": "sampler1DArray",
+            "kind": "glsl"
+        },
+        {
+            "name": "sampler1DArrayShadow",
+            "kind": "glsl"
+        },
+        {
+            "name": "sampler1DShadow",
+            "kind": "glsl"
+        },
+        {
+            "name": "sampler2D",
+            "kind": "glsl"
+        },
+        {
+            "name": "sampler2DArray",
+            "kind": "glsl"
+        },
+        {
+            "name": "sampler2DArrayShadow",
+            "kind": "glsl"
+        },
+        {
+            "name": "sampler2DMS",
+            "kind": "glsl"
+        },
+        {
+            "name": "sampler2DMSArray",
+            "kind": "glsl"
+        },
+        {
+            "name": "sampler2DRect",
+            "kind": "glsl"
+        },
+        {
+            "name": "sampler2DRectShadow",
+            "kind": "glsl"
+        },
+        {
+            "name": "sampler2DShadow",
+            "kind": "glsl"
+        },
+        {
+            "name": "sampler3D",
+            "kind": "glsl"
+        },
+        {
+            "name": "sampler3DRect",
+            "kind": "reserved"
+        },
+        {
+            "name": "samplerBuffer",
+            "kind": "glsl"
+        },
+        {
+            "name": "samplerCube",
+            "kind": "glsl"
+        },
+        {
+            "name": "samplerCubeArray",
+            "kind": "glsl"
+        },
+        {
+            "name": "samplerCubeArrayShadow",
+            "kind": "glsl"
+        },
+        {
+            "name": "samplerCubeShadow",
+            "kind": "glsl"
+        },
+        {
+            "name": "samplerShadow",
+            "kind": "vulkan"
+        },
+        {
+            "name": "shared",
+            "kind": "glsl"
+        },
+        {
+            "name": "short",
+            "kind": "reserved"
+        },
+        {
+            "name": "sizeof",
+            "kind": "reserved"
+        },
+        {
+            "name": "smooth",
+            "kind": "glsl"
+        },
+        {
+            "name": "static",
+            "kind": "reserved"
+        },
+        {
+            "name": "struct",
+            "kind": "glsl"
+        },
+        {
+            "name": "subpassInput",
+            "kind": "vulkan"
+        },
+        {
+            "name": "subpassInputMS",
+            "kind": "vulkan"
+        },
+        {
+            "name": "subroutine",
+            "kind": "glsl"
+        },
+        {
+            "name": "superp",
+            "kind": "reserved"
+        },
+        {
+            "name": "switch",
+            "kind": "glsl"
+        },
+        {
+            "name": "template",
+            "kind": "reserved"
+        },
+        {
+            "name": "texture1D",
+            "kind": "vulkan"
+        },
+        {
+            "name": "texture1DArray",
+            "kind": "vulkan"
+        },
+        {
+            "name": "texture2D",
+            "kind": "vulkan"
+        },
+        {
+            "name": "texture2DArray",
+            "kind": "vulkan"
+        },
+        {
+            "name": "texture2DMS",
+            "kind": "vulkan"
+        },
+        {
+            "name": "texture2DMSArray",
+            "kind": "vulkan"
+        },
+        {
+            "name": "texture2DRect",
+            "kind": "vulkan"
+        },
+        {
+            "name": "texture3D",
+            "kind": "vulkan"
+        },
+        {
+            "name": "textureBuffer",
+            "kind": "vulkan"
+        },
+        {
+            "name": "textureCube",
+            "kind": "vulkan"
+        },
+        {
+            "name": "textureCubeArray",
+            "kind": "vulkan"
+        },
+        {
+            "name": "this",
+            "kind": "reserved"
+        },
+        {
+            "name": "true",
+            "kind": "glsl"
+        },
+        {
+            "name": "typedef",
+            "kind": "reserved"
+        },
+        {
+            "name": "uimage1D",
+            "kind": "glsl"
+        },
+        {
+            "name": "uimage1DArray",
+            "kind": "glsl"
+        },
+        {
+            "name": "uimage2D",
+            "kind": "glsl"
+        },
+        {
+            "name": "uimage2DArray",
+            "kind": "glsl"
+        },
+        {
+            "name": "uimage2DMS",
+            "kind": "glsl"
+        },
+        {
+            "name": "uimage2DMSArray",
+            "kind": "glsl"
+        },
+        {
+            "name": "uimage2DRect",
+            "kind": "glsl"
+        },
+        {
+            "name": "uimage3D",
+            "kind": "glsl"
+        },
+        {
+            "name": "uimageBuffer",
+            "kind": "glsl"
+        },
+        {
+            "name": "uimageCube",
+            "kind": "glsl"
+        },
+        {
+            "name": "uimageCubeArray",
+            "kind": "glsl"
+        },
+        {
+            "name": "uint",
+            "kind": "glsl"
+        },
+        {
+            "name": "uniform",
+            "kind": "glsl"
+        },
+        {
+            "name": "union",
+            "kind": "reserved"
+        },
+        {
+            "name": "unsigned",
+            "kind": "reserved"
+        },
+        {
+            "name": "usampler1D",
+            "kind": "glsl"
+        },
+        {
+            "name": "usampler1DArray",
+            "kind": "glsl"
+        },
+        {
+            "name": "usampler2D",
+            "kind": "glsl"
+        },
+        {
+            "name": "usampler2DArray",
+            "kind": "glsl"
+        },
+        {
+            "name": "usampler2DMS",
+            "kind": "glsl"
+        },
+        {
+            "name": "usampler2DMSArray",
+            "kind": "glsl"
+        },
+        {
+            "name": "usampler2DRect",
+            "kind": "glsl"
+        },
+        {
+            "name": "usampler3D",
+            "kind": "glsl"
+        },
+        {
+            "name": "usamplerBuffer",
+            "kind": "glsl"
+        },
+        {
+            "name": "usamplerCube",
+            "kind": "glsl"
+        },
+        {
+            "name": "usamplerCubeArray",
+            "kind": "glsl"
+        },
+        {
+            "name": "using",
+            "kind": "reserved"
+        },
+        {
+            "name": "usubpassInput",
+            "kind": "vulkan"
+        },
+        {
+            "name": "usubpassInputMS",
+            "kind": "vulkan"
+        },
+        {
+            "name": "utexture1D",
+            "kind": "vulkan"
+        },
+        {
+            "name": "utexture1DArray",
+            "kind": "vulkan"
+        },
+        {
+            "name": "utexture2D",
+            "kind": "vulkan"
+        },
+        {
+            "name": "utexture2DArray",
+            "kind": "vulkan"
+        },
+        {
+            "name": "utexture2DMS",
+            "kind": "vulkan"
+        },
+        {
+            "name": "utexture2DMSArray",
+            "kind": "vulkan"
+        },
+        {
+            "name": "utexture2DRect",
+            "kind": "vulkan"
+        },
+        {
+            "name": "utexture3D",
+            "kind": "vulkan"
+        },
+        {
+            "name": "utextureBuffer",
+            "kind": "vulkan"
+        },
+        {
+            "name": "utextureCube",
+            "kind": "vulkan"
+        },
+        {
+            "name": "utextureCubeArray",
+            "kind": "vulkan"
+        },
+        {
+            "name": "uvec2",
+            "kind": "glsl"
+        },
+        {
+            "name": "uvec3",
+            "kind": "glsl"
+        },
+        {
+            "name": "uvec4",
+            "kind": "glsl"
+        },
+        {
+            "name": "varying",
+            "kind": "glsl"
+        },
+        {
+            "name": "vec2",
+            "kind": "glsl"
+        },
+        {
+            "name": "vec3",
+            "kind": "glsl"
+        },
+        {
+            "name": "vec4",
+            "kind": "glsl"
+        },
+        {
+            "name": "void",
+            "kind": "glsl"
+        },
+        {
+            "name": "volatile",
+            "kind": "glsl"
+        },
+        {
+            "name": "while",
+            "kind": "glsl"
+        },
+        {
+            "name": "writeonly",
+            "kind": "glsl"
+        }
+    ],
+    "operators": [
+        {
+            "name": "!",
+            "precedence": 3,
+            "left_to_right": false,
+            "kind": "prefix"
+        },
+        {
+            "name": "!=",
+            "precedence": 8,
+            "left_to_right": true,
+            "kind": "infix"
+        },
+        {
+            "name": "%",
+            "precedence": 4,
+            "left_to_right": true,
+            "kind": "infix"
+        },
+        {
+            "name": "%=",
+            "precedence": 16,
+            "left_to_right": false,
+            "kind": "infix"
+        },
+        {
+            "name": "&",
+            "precedence": 9,
+            "left_to_right": true,
+            "kind": "infix"
+        },
+        {
+            "name": "&&",
+            "precedence": 12,
+            "left_to_right": true,
+            "kind": "infix"
+        },
+        {
+            "name": "&=",
+            "precedence": 16,
+            "left_to_right": false,
+            "kind": "infix"
+        },
+        {
+            "name": "*",
+            "precedence": 4,
+            "left_to_right": true,
+            "kind": "infix"
+        },
+        {
+            "name": "*=",
+            "precedence": 16,
+            "left_to_right": false,
+            "kind": "infix"
+        },
+        {
+            "name": "+",
+            "precedence": 3,
+            "left_to_right": false,
+            "kind": "prefix"
+        },
+        {
+            "name": "+",
+            "precedence": 5,
+            "left_to_right": true,
+            "kind": "infix"
+        },
+        {
+            "name": "++",
+            "precedence": 2,
+            "left_to_right": true,
+            "kind": "postfix"
+        },
+        {
+            "name": "++",
+            "precedence": 3,
+            "left_to_right": false,
+            "kind": "prefix"
+        },
+        {
+            "name": "+=",
+            "precedence": 16,
+            "left_to_right": false,
+            "kind": "infix"
+        },
+        {
+            "name": "-",
+            "precedence": 3,
+            "left_to_right": false,
+            "kind": "prefix"
+        },
+        {
+            "name": "-",
+            "precedence": 5,
+            "left_to_right": true,
+            "kind": "infix"
+        },
+        {
+            "name": "--",
+            "precedence": 2,
+            "left_to_right": true,
+            "kind": "postfix"
+        },
+        {
+            "name": "--",
+            "precedence": 3,
+            "left_to_right": false,
+            "kind": "prefix"
+        },
+        {
+            "name": "-=",
+            "precedence": 16,
+            "left_to_right": false,
+            "kind": "infix"
+        },
+        {
+            "name": "/",
+            "precedence": 4,
+            "left_to_right": true,
+            "kind": "infix"
+        },
+        {
+            "name": "/=",
+            "precedence": 16,
+            "left_to_right": false,
+            "kind": "infix"
+        },
+        {
+            "name": ":",
+            "precedence": 15,
+            "left_to_right": false,
+            "kind": "infix"
+        },
+        {
+            "name": "<",
+            "precedence": 7,
+            "left_to_right": true,
+            "kind": "infix"
+        },
+        {
+            "name": "<<",
+            "precedence": 6,
+            "left_to_right": true,
+            "kind": "infix"
+        },
+        {
+            "name": "<<=",
+            "precedence": 16,
+            "left_to_right": false,
+            "kind": "infix"
+        },
+        {
+            "name": "<=",
+            "precedence": 7,
+            "left_to_right": true,
+            "kind": "infix"
+        },
+        {
+            "name": "=",
+            "precedence": 16,
+            "left_to_right": false,
+            "kind": "infix"
+        },
+        {
+            "name": "==",
+            "precedence": 8,
+            "left_to_right": true,
+            "kind": "infix"
+        },
+        {
+            "name": ">",
+            "precedence": 7,
+            "left_to_right": true,
+            "kind": "infix"
+        },
+        {
+            "name": ">=",
+            "precedence": 7,
+            "left_to_right": true,
+            "kind": "infix"
+        },
+        {
+            "name": ">>",
+            "precedence": 6,
+            "left_to_right": true,
+            "kind": "infix"
+        },
+        {
+            "name": ">>=",
+            "precedence": 16,
+            "left_to_right": false,
+            "kind": "infix"
+        },
+        {
+            "name": "?",
+            "precedence": 15,
+            "left_to_right": false,
+            "kind": "infix"
+        },
+        {
+            "name": "^",
+            "precedence": 10,
+            "left_to_right": true,
+            "kind": "infix"
+        },
+        {
+            "name": "^=",
+            "precedence": 16,
+            "left_to_right": false,
+            "kind": "infix"
+        },
+        {
+            "name": "^^",
+            "precedence": 13,
+            "left_to_right": true,
+            "kind": "infix"
+        },
+        {
+            "name": "|",
+            "precedence": 11,
+            "left_to_right": true,
+            "kind": "infix"
+        },
+        {
+            "name": "|=",
+            "precedence": 16,
+            "left_to_right": false,
+            "kind": "infix"
+        },
+        {
+            "name": "||",
+            "precedence": 14,
+            "left_to_right": true,
+            "kind": "infix"
+        },
+        {
+            "name": "~",
+            "precedence": 3,
+            "left_to_right": false,
+            "kind": "prefix"
+        }
+    ],
+    "types": [
+        {
+            "name": "atomic_uint",
+            "description": [
+                "a handle for accessing an unsigned integer atomic counter"
+            ]
+        },
+        {
+            "name": "bool",
+            "description": [
+                "a conditional type, taking on values of true or false"
+            ]
+        },
+        {
+            "name": "bvec2",
+            "description": [
+                "a two-component Boolean vector"
+            ]
+        },
+        {
+            "name": "bvec3",
+            "description": [
+                "a three-component Boolean vector"
+            ]
+        },
+        {
+            "name": "bvec4",
+            "description": [
+                "a four-component Boolean vector"
+            ]
+        },
+        {
+            "name": "dmat2",
+            "description": [
+                "a 2 × 2 double-precision floating-point matrix"
+            ]
+        },
+        {
+            "name": "dmat2x2",
+            "description": [
+                "same as a dmat2"
+            ]
+        },
+        {
+            "name": "dmat2x3",
+            "description": [
+                "a double-precision floating-point matrix with 2 columns and 3 rows"
+            ]
+        },
+        {
+            "name": "dmat2x4",
+            "description": [
+                "a double-precision floating-point matrix with 2 columns and 4 rows"
+            ]
+        },
+        {
+            "name": "dmat3",
+            "description": [
+                "a 3 × 3 double-precision floating-point matrix"
+            ]
+        },
+        {
+            "name": "dmat3x2",
+            "description": [
+                "a double-precision floating-point matrix with 3 columns and 2 rows"
+            ]
+        },
+        {
+            "name": "dmat3x3",
+            "description": [
+                "same as a dmat3"
+            ]
+        },
+        {
+            "name": "dmat3x4",
+            "description": [
+                "a double-precision floating-point matrix with 3 columns and 4 rows"
+            ]
+        },
+        {
+            "name": "dmat4",
+            "description": [
+                "a 4 × 4 double-precision floating-point matrix"
+            ]
+        },
+        {
+            "name": "dmat4x2",
+            "description": [
+                "a double-precision floating-point matrix with 4 columns and 2 rows"
+            ]
+        },
+        {
+            "name": "dmat4x3",
+            "description": [
+                "a double-precision floating-point matrix with 4 columns and 3 rows"
+            ]
+        },
+        {
+            "name": "dmat4x4",
+            "description": [
+                "same as a dmat4"
+            ]
+        },
+        {
+            "name": "double",
+            "description": [
+                "a double-precision floating-point scalar"
+            ]
+        },
+        {
+            "name": "dvec2",
+            "description": [
+                "a two-component double-precision floating-point vector"
+            ]
+        },
+        {
+            "name": "dvec3",
+            "description": [
+                "a three-component double-precision floating-point vector"
+            ]
+        },
+        {
+            "name": "dvec4",
+            "description": [
+                "a four-component double-precision floating-point vector"
+            ]
+        },
+        {
+            "name": "float",
+            "description": [
+                "a single-precision floating-point scalar"
+            ]
+        },
+        {
+            "name": "iimage1D",
+            "description": [
+                "a handle for accessing an integer 1D texture"
+            ]
+        },
+        {
+            "name": "iimage1DArray",
+            "description": [
+                "a handle for accessing an integer 1D array texture"
+            ]
+        },
+        {
+            "name": "iimage2D",
+            "description": [
+                "a handle for accessing an integer 2D texture"
+            ]
+        },
+        {
+            "name": "iimage2DArray",
+            "description": [
+                "a handle for accessing an integer 2D array texture"
+            ]
+        },
+        {
+            "name": "iimage2DMS",
+            "description": [
+                "a handle for accessing an integer 2D multisample texture"
+            ]
+        },
+        {
+            "name": "iimage2DMSArray",
+            "description": [
+                "a handle for accessing an integer 2D multisample array texture"
+            ]
+        },
+        {
+            "name": "iimage2DRect",
+            "description": [
+                "a handle for accessing an integer 2D rectangle texture"
+            ]
+        },
+        {
+            "name": "iimage3D",
+            "description": [
+                "a handle for accessing an integer 3D texture"
+            ]
+        },
+        {
+            "name": "iimageBuffer",
+            "description": [
+                "a handle for accessing an integer buffer texture"
+            ]
+        },
+        {
+            "name": "iimageCube",
+            "description": [
+                "a handle for accessing an integer cube mapped texture"
+            ]
+        },
+        {
+            "name": "iimageCubeArray",
+            "description": [
+                "a handle for accessing an integer cube map array texture"
+            ]
+        },
+        {
+            "name": "image1D",
+            "description": [
+                "a handle for accessing a 1D texture"
+            ]
+        },
+        {
+            "name": "image1DArray",
+            "description": [
+                "a handle for accessing a 1D array texture"
+            ]
+        },
+        {
+            "name": "image2D",
+            "description": [
+                "a handle for accessing a 2D texture"
+            ]
+        },
+        {
+            "name": "image2DArray",
+            "description": [
+                "a handle for accessing a 2D array texture"
+            ]
+        },
+        {
+            "name": "image2DMS",
+            "description": [
+                "a handle for accessing a 2D multisample texture"
+            ]
+        },
+        {
+            "name": "image2DMSArray",
+            "description": [
+                "a handle for accessing a 2D multisample array texture"
+            ]
+        },
+        {
+            "name": "image2DRect",
+            "description": [
+                "a handle for accessing a rectangle texture"
+            ]
+        },
+        {
+            "name": "image3D",
+            "description": [
+                "a handle for accessing a 3D texture"
+            ]
+        },
+        {
+            "name": "imageBuffer",
+            "description": [
+                "a handle for accessing a buffer texture"
+            ]
+        },
+        {
+            "name": "imageCube",
+            "description": [
+                "a handle for accessing a cube mapped texture"
+            ]
+        },
+        {
+            "name": "imageCubeArray",
+            "description": [
+                "a handle for accessing a cube map array texture"
+            ]
+        },
+        {
+            "name": "int",
+            "description": [
+                "a signed integer"
+            ]
+        },
+        {
+            "name": "isampler1D",
+            "description": [
+                "a handle for accessing an integer 1D texture"
+            ]
+        },
+        {
+            "name": "isampler1DArray",
+            "description": [
+                "a handle for accessing an integer 1D array texture"
+            ]
+        },
+        {
+            "name": "isampler2D",
+            "description": [
+                "a handle for accessing an integer 2D texture"
+            ]
+        },
+        {
+            "name": "isampler2DArray",
+            "description": [
+                "a handle for accessing an integer 2D array texture"
+            ]
+        },
+        {
+            "name": "isampler2DMS",
+            "description": [
+                "a handle for accessing an integer 2D multisample texture"
+            ]
+        },
+        {
+            "name": "isampler2DMSArray",
+            "description": [
+                "a handle for accessing an integer 2D multisample array texture"
+            ]
+        },
+        {
+            "name": "isampler2DRect",
+            "description": [
+                "a handle for accessing an integer 2D rectangle texture"
+            ]
+        },
+        {
+            "name": "isampler3D",
+            "description": [
+                "a handle for accessing an integer 3D texture"
+            ]
+        },
+        {
+            "name": "isamplerBuffer",
+            "description": [
+                "a handle for accessing an integer buffer texture"
+            ]
+        },
+        {
+            "name": "isamplerCube",
+            "description": [
+                "a handle for accessing an integer cube mapped texture"
+            ]
+        },
+        {
+            "name": "isamplerCubeArray",
+            "description": [
+                "a handle for accessing an integer cube map array texture"
+            ]
+        },
+        {
+            "name": "isubpassInput",
+            "description": [
+                "a handle for accessing an integer subpass input"
+            ]
+        },
+        {
+            "name": "isubpassInputMS",
+            "description": [
+                "a handle for accessing a multi-sampled integer subpass input"
+            ]
+        },
+        {
+            "name": "itexture1D",
+            "description": [
+                "a handle for accessing an integer 1D texture"
+            ]
+        },
+        {
+            "name": "itexture1DArray",
+            "description": [
+                "a handle for accessing an integer 1D array texture"
+            ]
+        },
+        {
+            "name": "itexture2D",
+            "description": [
+                "a handle for accessing an integer 2D texture"
+            ]
+        },
+        {
+            "name": "itexture2DArray",
+            "description": [
+                "a handle for accessing an integer 2D array texture"
+            ]
+        },
+        {
+            "name": "itexture2DMS",
+            "description": [
+                "a handle for accessing an integer 2D multisample texture"
+            ]
+        },
+        {
+            "name": "itexture2DMSArray",
+            "description": [
+                "a handle for accessing an integer 2D multisample array texture"
+            ]
+        },
+        {
+            "name": "itexture2DRect",
+            "description": [
+                "a handle for accessing an integer 2D rectangle texture"
+            ]
+        },
+        {
+            "name": "itexture3D",
+            "description": [
+                "a handle for accessing an integer 3D texture"
+            ]
+        },
+        {
+            "name": "itextureBuffer",
+            "description": [
+                "a handle for accessing an integer buffer texture"
+            ]
+        },
+        {
+            "name": "itextureCube",
+            "description": [
+                "a handle for accessing an integer cube mapped texture"
+            ]
+        },
+        {
+            "name": "itextureCubeArray",
+            "description": [
+                "a handle for accessing an integer cube map array texture"
+            ]
+        },
+        {
+            "name": "ivec2",
+            "description": [
+                "a two-component signed integer vector"
+            ]
+        },
+        {
+            "name": "ivec3",
+            "description": [
+                "a three-component signed integer vector"
+            ]
+        },
+        {
+            "name": "ivec4",
+            "description": [
+                "a four-component signed integer vector"
+            ]
+        },
+        {
+            "name": "mat2",
+            "description": [
+                "a 2 × 2 single-precision floating-point matrix"
+            ]
+        },
+        {
+            "name": "mat2x2",
+            "description": [
+                "same as a mat2"
+            ]
+        },
+        {
+            "name": "mat2x3",
+            "description": [
+                "a single-precision floating-point matrix with 2 columns and 3 rows"
+            ]
+        },
+        {
+            "name": "mat2x4",
+            "description": [
+                "a single-precision floating-point matrix with 2 columns and 4 rows"
+            ]
+        },
+        {
+            "name": "mat3",
+            "description": [
+                "a 3 × 3 single-precision floating-point matrix"
+            ]
+        },
+        {
+            "name": "mat3x2",
+            "description": [
+                "a single-precision floating-point matrix with 3 columns and 2 rows"
+            ]
+        },
+        {
+            "name": "mat3x3",
+            "description": [
+                "same as a mat3"
+            ]
+        },
+        {
+            "name": "mat3x4",
+            "description": [
+                "a single-precision floating-point matrix with 3 columns and 4 rows"
+            ]
+        },
+        {
+            "name": "mat4",
+            "description": [
+                "a 4 × 4 single-precision floating-point matrix"
+            ]
+        },
+        {
+            "name": "mat4x2",
+            "description": [
+                "a single-precision floating-point matrix with 4 columns and 2 rows"
+            ]
+        },
+        {
+            "name": "mat4x3",
+            "description": [
+                "a single-precision floating-point matrix with 4 columns and 3 rows"
+            ]
+        },
+        {
+            "name": "mat4x4",
+            "description": [
+                "same as a mat4"
+            ]
+        },
+        {
+            "name": "sampler",
+            "description": [
+                "a handle for accessing state describing how to sample a texture"
+            ]
+        },
+        {
+            "name": "sampler1D",
+            "description": [
+                "a handle for accessing a 1D texture"
+            ]
+        },
+        {
+            "name": "sampler1DArray",
+            "description": [
+                "a handle for accessing a 1D array texture"
+            ]
+        },
+        {
+            "name": "sampler1DArrayShadow",
+            "description": [
+                "a handle for accessing a 1D array depth texture with comparison"
+            ]
+        },
+        {
+            "name": "sampler1DShadow",
+            "description": [
+                "a handle for accessing a 1D depth texture with comparison"
+            ]
+        },
+        {
+            "name": "sampler2D",
+            "description": [
+                "a handle for accessing a 2D texture"
+            ]
+        },
+        {
+            "name": "sampler2DArray",
+            "description": [
+                "a handle for accessing a 2D array texture"
+            ]
+        },
+        {
+            "name": "sampler2DArrayShadow",
+            "description": [
+                "a handle for accessing a 2D array depth texture with comparison"
+            ]
+        },
+        {
+            "name": "sampler2DMS",
+            "description": [
+                "a handle for accessing a 2D multisample texture"
+            ]
+        },
+        {
+            "name": "sampler2DMSArray",
+            "description": [
+                "a handle for accessing a 2D multisample array texture"
+            ]
+        },
+        {
+            "name": "sampler2DRect",
+            "description": [
+                "a handle for accessing a rectangle texture"
+            ]
+        },
+        {
+            "name": "sampler2DRectShadow",
+            "description": [
+                "a handle for accessing a rectangle texture with comparison"
+            ]
+        },
+        {
+            "name": "sampler2DShadow",
+            "description": [
+                "a handle for accessing a 2D depth texture with comparison"
+            ]
+        },
+        {
+            "name": "sampler3D",
+            "description": [
+                "a handle for accessing a 3D texture"
+            ]
+        },
+        {
+            "name": "samplerBuffer",
+            "description": [
+                "a handle for accessing a buffer texture"
+            ]
+        },
+        {
+            "name": "samplerCube",
+            "description": [
+                "a handle for accessing a cube mapped texture"
+            ]
+        },
+        {
+            "name": "samplerCubeArray",
+            "description": [
+                "a handle for accessing a cube map array texture"
+            ]
+        },
+        {
+            "name": "samplerCubeArrayShadow",
+            "description": [
+                "a handle for accessing a cube map array depth texture with comparison"
+            ]
+        },
+        {
+            "name": "samplerCubeShadow",
+            "description": [
+                "a handle for accessing a cube map depth texture with comparison"
+            ]
+        },
+        {
+            "name": "samplerShadow",
+            "description": [
+                "a handle for accessing state describing how to sample a depth texture with comparison"
+            ]
+        },
+        {
+            "name": "subpassInput",
+            "description": [
+                "a handle for accessing a floating-point subpass input"
+            ]
+        },
+        {
+            "name": "subpassInputMS",
+            "description": [
+                "a handle for accessing a multi-sampled floating-point subpass input"
+            ]
+        },
+        {
+            "name": "texture1D",
+            "description": [
+                "a handle for accessing a 1D texture"
+            ]
+        },
+        {
+            "name": "texture1DArray",
+            "description": [
+                "a handle for accessing a 1D array texture"
+            ]
+        },
+        {
+            "name": "texture2D",
+            "description": [
+                "a handle for accessing a 2D texture"
+            ]
+        },
+        {
+            "name": "texture2DArray",
+            "description": [
+                "a handle for accessing a 2D array texture"
+            ]
+        },
+        {
+            "name": "texture2DMS",
+            "description": [
+                "a handle for accessing a 2D multisample texture"
+            ]
+        },
+        {
+            "name": "texture2DMSArray",
+            "description": [
+                "a handle for accessing a 2D multisample array texture"
+            ]
+        },
+        {
+            "name": "texture2DRect",
+            "description": [
+                "a handle for accessing a rectangle texture"
+            ]
+        },
+        {
+            "name": "texture3D",
+            "description": [
+                "a handle for accessing a 3D texture"
+            ]
+        },
+        {
+            "name": "textureBuffer",
+            "description": [
+                "a handle for accessing a buffer texture"
+            ]
+        },
+        {
+            "name": "textureCube",
+            "description": [
+                "a handle for accessing a cube mapped texture"
+            ]
+        },
+        {
+            "name": "textureCubeArray",
+            "description": [
+                "a handle for accessing a cube map array texture"
+            ]
+        },
+        {
+            "name": "uimage1D",
+            "description": [
+                "a handle for accessing an unsigned integer 1D texture"
+            ]
+        },
+        {
+            "name": "uimage1DArray",
+            "description": [
+                "a handle for accessing an unsigned integer 1D array texture"
+            ]
+        },
+        {
+            "name": "uimage2D",
+            "description": [
+                "a handle for accessing an unsigned integer 2D texture"
+            ]
+        },
+        {
+            "name": "uimage2DArray",
+            "description": [
+                "a handle for accessing an unsigned integer 2D array texture"
+            ]
+        },
+        {
+            "name": "uimage2DMS",
+            "description": [
+                "a handle for accessing an unsigned integer 2D multisample texture"
+            ]
+        },
+        {
+            "name": "uimage2DMSArray",
+            "description": [
+                "a handle for accessing an unsigned integer 2D multisample array texture"
+            ]
+        },
+        {
+            "name": "uimage2DRect",
+            "description": [
+                "a handle for accessing an unsigned integer rectangle texture"
+            ]
+        },
+        {
+            "name": "uimage3D",
+            "description": [
+                "a handle for accessing an unsigned integer 3D texture"
+            ]
+        },
+        {
+            "name": "uimageBuffer",
+            "description": [
+                "a handle for accessing an unsigned integer buffer texture"
+            ]
+        },
+        {
+            "name": "uimageCube",
+            "description": [
+                "a handle for accessing an unsigned integer cube mapped texture"
+            ]
+        },
+        {
+            "name": "uimageCubeArray",
+            "description": [
+                "a handle for accessing an unsigned integer cube map array texture"
+            ]
+        },
+        {
+            "name": "uint",
+            "description": [
+                "an unsigned integer"
+            ]
+        },
+        {
+            "name": "usampler1D",
+            "description": [
+                "a handle for accessing an unsigned integer 1D texture"
+            ]
+        },
+        {
+            "name": "usampler1DArray",
+            "description": [
+                "a handle for accessing an unsigned integer 1D array texture"
+            ]
+        },
+        {
+            "name": "usampler2D",
+            "description": [
+                "a handle for accessing an unsigned integer 2D texture"
+            ]
+        },
+        {
+            "name": "usampler2DArray",
+            "description": [
+                "a handle for accessing an unsigned integer 2D array texture"
+            ]
+        },
+        {
+            "name": "usampler2DMS",
+            "description": [
+                "a handle for accessing an unsigned integer 2D multisample texture"
+            ]
+        },
+        {
+            "name": "usampler2DMSArray",
+            "description": [
+                "a handle for accessing an unsigned integer 2D multisample array texture"
+            ]
+        },
+        {
+            "name": "usampler2DRect",
+            "description": [
+                "a handle for accessing an unsigned integer rectangle texture"
+            ]
+        },
+        {
+            "name": "usampler3D",
+            "description": [
+                "a handle for accessing an unsigned integer 3D texture"
+            ]
+        },
+        {
+            "name": "usamplerBuffer",
+            "description": [
+                "a handle for accessing an unsigned integer buffer texture"
+            ]
+        },
+        {
+            "name": "usamplerCube",
+            "description": [
+                "a handle for accessing an unsigned integer cube mapped texture"
+            ]
+        },
+        {
+            "name": "usamplerCubeArray",
+            "description": [
+                "a handle for accessing an unsigned integer cube map array texture"
+            ]
+        },
+        {
+            "name": "usubpassInput",
+            "description": [
+                "a handle for accessing an unsigned-integer subpass input"
+            ]
+        },
+        {
+            "name": "usubpassInputMS",
+            "description": [
+                "a handle for accessing a multi-sampled unsigned-integer subpass input"
+            ]
+        },
+        {
+            "name": "utexture1D",
+            "description": [
+                "a handle for accessing an unsigned integer 1D texture"
+            ]
+        },
+        {
+            "name": "utexture1DArray",
+            "description": [
+                "a handle for accessing an unsigned integer 1D array texture"
+            ]
+        },
+        {
+            "name": "utexture1DArray",
+            "description": [
+                "a handle for accessing an unsigned integer 2D array texture"
+            ]
+        },
+        {
+            "name": "utexture2D",
+            "description": [
+                "a handle for accessing an unsigned integer 2D texture"
+            ]
+        },
+        {
+            "name": "utexture2DMS",
+            "description": [
+                "a handle for accessing an unsigned integer 2D multisample texture"
+            ]
+        },
+        {
+            "name": "utexture2DMSArray",
+            "description": [
+                "a handle for accessing an unsigned integer 2D multisample array texture"
+            ]
+        },
+        {
+            "name": "utexture2DRect",
+            "description": [
+                "a handle for accessing an unsigned integer rectangle texture"
+            ]
+        },
+        {
+            "name": "utexture3D",
+            "description": [
+                "a handle for accessing an unsigned integer 3D texture"
+            ]
+        },
+        {
+            "name": "utextureBuffer",
+            "description": [
+                "a handle for accessing an unsigned integer buffer texture"
+            ]
+        },
+        {
+            "name": "utextureCube",
+            "description": [
+                "a handle for accessing an unsigned integer cube mapped texture"
+            ]
+        },
+        {
+            "name": "utextureCubeArray",
+            "description": [
+                "a handle for accessing an unsigned integer cube map array texture"
+            ]
+        },
+        {
+            "name": "uvec2",
+            "description": [
+                "a two-component unsigned integer vector"
+            ]
+        },
+        {
+            "name": "uvec3",
+            "description": [
+                "a three-component unsigned integer vector"
+            ]
+        },
+        {
+            "name": "uvec4",
+            "description": [
+                "a four-component unsigned integer vector"
+            ]
+        },
+        {
+            "name": "vec2",
+            "description": [
+                "a two-component single-precision floating-point vector"
+            ]
+        },
+        {
+            "name": "vec3",
+            "description": [
+                "a three-component single-precision floating-point vector"
+            ]
+        },
+        {
+            "name": "vec4",
+            "description": [
+                "a four-component single-precision floating-point vector"
+            ]
+        },
+        {
+            "name": "void",
+            "description": [
+                "for functions that do not return a value"
+            ]
+        }
+    ],
     "variables": [
         {
             "modifiers": "in",
@@ -21219,7 +23393,7 @@
             ],
             "description": [
                 "`textureLod` performs a texture lookup at coordinate _P_ from the texture bound to _sampler_ with an explicit level-of-detail as specified in _lod_. _lod_ specifies `λ_base` and sets the partial derivatives as follows:",
-                "```\n   δ  u  /  δ  x   =  0  ,       δ  v  /  δ  x   =  0  ,       δ  w  /  δ  x   =  0    \n   δ  u  /  δ  y   =  0  ,       δ  v  /  δ  y   =  0  ,       δ  w  /  δ  y   =  0    \n\n```\n"
+                "```\n   δu  /  δx   =  0  ,       δv  /  δx   =  0  ,       δw  /  δx   =  0    \n   δu  /  δy   =  0  ,       δv  /  δy   =  0  ,       δw  /  δy   =  0    \n\n```\n"
             ],
             "versions": [
                 130,
@@ -21253,7 +23427,7 @@
             ],
             "description": [
                 "`textureLod` performs a texture lookup at coordinate _P_ from the texture bound to _sampler_ with an explicit level-of-detail as specified in _lod_. _lod_ specifies `λ_base` and sets the partial derivatives as follows:",
-                "```\n   δ  u  /  δ  x   =  0  ,       δ  v  /  δ  x   =  0  ,       δ  w  /  δ  x   =  0    \n   δ  u  /  δ  y   =  0  ,       δ  v  /  δ  y   =  0  ,       δ  w  /  δ  y   =  0    \n\n```\n"
+                "```\n   δu  /  δx   =  0  ,       δv  /  δx   =  0  ,       δw  /  δx   =  0    \n   δu  /  δy   =  0  ,       δv  /  δy   =  0  ,       δw  /  δy   =  0    \n\n```\n"
             ],
             "versions": [
                 140,
@@ -21286,7 +23460,7 @@
             ],
             "description": [
                 "`textureLod` performs a texture lookup at coordinate _P_ from the texture bound to _sampler_ with an explicit level-of-detail as specified in _lod_. _lod_ specifies `λ_base` and sets the partial derivatives as follows:",
-                "```\n   δ  u  /  δ  x   =  0  ,       δ  v  /  δ  x   =  0  ,       δ  w  /  δ  x   =  0    \n   δ  u  /  δ  y   =  0  ,       δ  v  /  δ  y   =  0  ,       δ  w  /  δ  y   =  0    \n\n```\n"
+                "```\n   δu  /  δx   =  0  ,       δv  /  δx   =  0  ,       δw  /  δx   =  0    \n   δu  /  δy   =  0  ,       δv  /  δy   =  0  ,       δw  /  δy   =  0    \n\n```\n"
             ],
             "versions": [
                 400,
@@ -21316,7 +23490,7 @@
             ],
             "description": [
                 "`textureLod` performs a texture lookup at coordinate _P_ from the texture bound to _sampler_ with an explicit level-of-detail as specified in _lod_. _lod_ specifies `λ_base` and sets the partial derivatives as follows:",
-                "```\n   δ  u  /  δ  x   =  0  ,       δ  v  /  δ  x   =  0  ,       δ  w  /  δ  x   =  0    \n   δ  u  /  δ  y   =  0  ,       δ  v  /  δ  y   =  0  ,       δ  w  /  δ  y   =  0    \n\n```\n"
+                "```\n   δu  /  δx   =  0  ,       δv  /  δx   =  0  ,       δw  /  δx   =  0    \n   δu  /  δy   =  0  ,       δv  /  δy   =  0  ,       δw  /  δy   =  0    \n\n```\n"
             ],
             "versions": [
                 400,
@@ -21346,7 +23520,7 @@
             ],
             "description": [
                 "`textureLod` performs a texture lookup at coordinate _P_ from the texture bound to _sampler_ with an explicit level-of-detail as specified in _lod_. _lod_ specifies `λ_base` and sets the partial derivatives as follows:",
-                "```\n   δ  u  /  δ  x   =  0  ,       δ  v  /  δ  x   =  0  ,       δ  w  /  δ  x   =  0    \n   δ  u  /  δ  y   =  0  ,       δ  v  /  δ  y   =  0  ,       δ  w  /  δ  y   =  0    \n\n```\n"
+                "```\n   δu  /  δx   =  0  ,       δv  /  δx   =  0  ,       δw  /  δx   =  0    \n   δu  /  δy   =  0  ,       δv  /  δy   =  0  ,       δw  /  δy   =  0    \n\n```\n"
             ],
             "versions": [
                 400,
@@ -21376,7 +23550,7 @@
             ],
             "description": [
                 "`textureLod` performs a texture lookup at coordinate _P_ from the texture bound to _sampler_ with an explicit level-of-detail as specified in _lod_. _lod_ specifies `λ_base` and sets the partial derivatives as follows:",
-                "```\n   δ  u  /  δ  x   =  0  ,       δ  v  /  δ  x   =  0  ,       δ  w  /  δ  x   =  0    \n   δ  u  /  δ  y   =  0  ,       δ  v  /  δ  y   =  0  ,       δ  w  /  δ  y   =  0    \n\n```\n"
+                "```\n   δu  /  δx   =  0  ,       δv  /  δx   =  0  ,       δw  /  δx   =  0    \n   δu  /  δy   =  0  ,       δv  /  δy   =  0  ,       δw  /  δy   =  0    \n\n```\n"
             ],
             "versions": [
                 400,
@@ -21406,7 +23580,7 @@
             ],
             "description": [
                 "`textureLod` performs a texture lookup at coordinate _P_ from the texture bound to _sampler_ with an explicit level-of-detail as specified in _lod_. _lod_ specifies `λ_base` and sets the partial derivatives as follows:",
-                "```\n   δ  u  /  δ  x   =  0  ,       δ  v  /  δ  x   =  0  ,       δ  w  /  δ  x   =  0    \n   δ  u  /  δ  y   =  0  ,       δ  v  /  δ  y   =  0  ,       δ  w  /  δ  y   =  0    \n\n```\n"
+                "```\n   δu  /  δx   =  0  ,       δv  /  δx   =  0  ,       δw  /  δx   =  0    \n   δu  /  δy   =  0  ,       δv  /  δy   =  0  ,       δw  /  δy   =  0    \n\n```\n"
             ],
             "versions": [
                 400,
@@ -21436,7 +23610,7 @@
             ],
             "description": [
                 "`textureLod` performs a texture lookup at coordinate _P_ from the texture bound to _sampler_ with an explicit level-of-detail as specified in _lod_. _lod_ specifies `λ_base` and sets the partial derivatives as follows:",
-                "```\n   δ  u  /  δ  x   =  0  ,       δ  v  /  δ  x   =  0  ,       δ  w  /  δ  x   =  0    \n   δ  u  /  δ  y   =  0  ,       δ  v  /  δ  y   =  0  ,       δ  w  /  δ  y   =  0    \n\n```\n"
+                "```\n   δu  /  δx   =  0  ,       δv  /  δx   =  0  ,       δw  /  δx   =  0    \n   δu  /  δy   =  0  ,       δv  /  δy   =  0  ,       δw  /  δy   =  0    \n\n```\n"
             ],
             "versions": [
                 400,
@@ -21466,7 +23640,7 @@
             ],
             "description": [
                 "`textureLod` performs a texture lookup at coordinate _P_ from the texture bound to _sampler_ with an explicit level-of-detail as specified in _lod_. _lod_ specifies `λ_base` and sets the partial derivatives as follows:",
-                "```\n   δ  u  /  δ  x   =  0  ,       δ  v  /  δ  x   =  0  ,       δ  w  /  δ  x   =  0    \n   δ  u  /  δ  y   =  0  ,       δ  v  /  δ  y   =  0  ,       δ  w  /  δ  y   =  0    \n\n```\n"
+                "```\n   δu  /  δx   =  0  ,       δv  /  δx   =  0  ,       δw  /  δx   =  0    \n   δu  /  δy   =  0  ,       δv  /  δy   =  0  ,       δw  /  δy   =  0    \n\n```\n"
             ],
             "versions": [
                 400,
@@ -21496,7 +23670,7 @@
             ],
             "description": [
                 "`textureLod` performs a texture lookup at coordinate _P_ from the texture bound to _sampler_ with an explicit level-of-detail as specified in _lod_. _lod_ specifies `λ_base` and sets the partial derivatives as follows:",
-                "```\n   δ  u  /  δ  x   =  0  ,       δ  v  /  δ  x   =  0  ,       δ  w  /  δ  x   =  0    \n   δ  u  /  δ  y   =  0  ,       δ  v  /  δ  y   =  0  ,       δ  w  /  δ  y   =  0    \n\n```\n"
+                "```\n   δu  /  δx   =  0  ,       δv  /  δx   =  0  ,       δw  /  δx   =  0    \n   δu  /  δy   =  0  ,       δv  /  δy   =  0  ,       δw  /  δy   =  0    \n\n```\n"
             ],
             "versions": [
                 400,

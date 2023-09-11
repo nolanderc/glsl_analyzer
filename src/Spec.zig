@@ -2,8 +2,30 @@ const std = @import("std");
 const util = @import("util.zig");
 
 comment: []const u8 = "",
+keywords: []const Keyword,
+operators: []const Operator,
+types: []const Type,
 variables: []const Variable,
 functions: []const Function,
+
+pub const Keyword = struct {
+    name: []const u8,
+    kind: Kind,
+    pub const Kind = enum { glsl, vulkan, reserved };
+};
+
+pub const Operator = struct {
+    name: []const u8,
+    precedence: u8,
+    left_to_right: bool,
+    kind: Kind,
+    pub const Kind = enum { prefix, infix, postfix };
+};
+
+pub const Type = struct {
+    name: []const u8,
+    description: []const []const u8,
+};
 
 pub const Variable = struct {
     modifiers: Modifiers = .{ .in = true },
