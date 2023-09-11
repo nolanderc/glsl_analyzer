@@ -640,7 +640,7 @@ with open(output, 'w') as f:
         'types': types,
         'variables': variables,
         'functions': functions,
-    }, indent=4, ensure_ascii=False))
+    }, indent=2, ensure_ascii=False))
 
 progress('done')
 
