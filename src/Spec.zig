@@ -55,13 +55,13 @@ pub const Function = struct {
 
 const bytes = @embedFile("glsl_spec.json");
 
-pub fn load(allocator: std.mem.Allocator) !std.json.Parsed(@This()) {
+pub fn load(allocator: std.mem.Allocator) !@This() {
     var diagnostic = std.json.Diagnostics{};
     var scanner = std.json.Scanner.initCompleteInput(allocator, bytes);
     defer scanner.deinit();
     scanner.enableDiagnostics(&diagnostic);
 
-    return std.json.parseFromTokenSource(@This(), allocator, &scanner, .{}) catch |err| {
+    return std.json.parseFromTokenSourceLeaky(@This(), allocator, &scanner, .{}) catch |err| {
         std.log.err(
             "could not parse GLSL spec: {}:{}: {s}",
             .{ diagnostic.getLine(), diagnostic.getColumn(), @errorName(err) },

@@ -7,7 +7,6 @@ const rpc = @import("jsonrpc.zig");
 const Response = rpc.Response;
 const Request = rpc.Request;
 
-const Spec = @import("Spec.zig");
 const Workspace = @import("Workspace.zig");
 const cli = @import("cli.zig");
 
@@ -62,17 +61,11 @@ pub fn main() !void {
     };
     defer channel.close();
 
-    const spec = try Spec.load(allocator);
-    defer spec.deinit();
-
-    const builtin_completions = try builtinCompletions(static_arena.allocator(), &spec.value);
-
     var buffered_writer = std.io.bufferedWriter(channel.writer());
     var state = State{
         .allocator = allocator,
         .channel = &buffered_writer,
-        .spec = &spec.value,
-        .builtin_completions = builtin_completions,
+        .workspace = try Workspace.init(allocator),
     };
     defer state.deinit();
 
@@ -231,12 +224,10 @@ const State = struct {
     channel: *std.io.BufferedWriter(4096, Channel.Writer),
     initialized: bool = false,
     parent_pid: ?c_int = null,
-    spec: *const Spec,
-    workspace: Workspace = .{},
-    builtin_completions: []const lsp.CompletionItem,
+    workspace: Workspace,
 
     pub fn deinit(self: *State) void {
-        self.workspace.deinit(self.allocator);
+        self.workspace.deinit();
     }
 
     fn handleMessage(self: *State, message: *rpc.Message(Request)) !void {
@@ -423,8 +414,8 @@ pub const Dispatch = struct {
             document.text.len,
         });
 
-        const file = try state.workspace.getOrCreateDocument(state.allocator, document.versioned());
-        try file.replaceAll(state.allocator, document.text);
+        const file = try state.workspace.getOrCreateDocument(document.versioned());
+        try file.replaceAll(document.text);
 
         return;
     }
@@ -467,16 +458,13 @@ pub const Dispatch = struct {
         defer params.deinit();
 
         std.log.debug("didChange: {s}", .{params.value.textDocument.uri});
-        const file: *Workspace.Document = try state.workspace.getOrCreateDocument(
-            state.allocator,
-            params.value.textDocument,
-        );
+        const file = try state.workspace.getOrCreateDocument(params.value.textDocument);
 
         for (params.value.contentChanges) |change| {
             if (change.range) |range| {
-                try file.replace(state.allocator, range, change.text);
+                try file.replace(range, change.text);
             } else {
-                try file.replaceAll(state.allocator, change.text);
+                try file.replaceAll(change.text);
             }
         }
 
@@ -497,7 +485,7 @@ pub const Dispatch = struct {
         var completions = std.ArrayList(lsp.CompletionItem).init(state.allocator);
         defer completions.deinit();
 
-        try completions.appendSlice(state.builtin_completions);
+        try completions.appendSlice(state.workspace.builtin_completions);
 
         try state.success(request.id, completions.items);
     }
@@ -518,7 +506,7 @@ pub const Dispatch = struct {
 
         std.log.debug("hover word: '{'}'", .{std.zig.fmtEscapes(word)});
 
-        const contents = for (state.builtin_completions) |*completion| {
+        const contents = for (state.workspace.builtin_completions) |*completion| {
             if (std.mem.eql(u8, completion.label, word)) {
                 if (completion.documentation) |*doc| break doc;
                 std.log.debug("item without documentation: '{'}'", .{std.zig.fmtEscapes(completion.label)});
@@ -532,110 +520,3 @@ pub const Dispatch = struct {
         });
     }
 };
-
-fn builtinCompletions(arena: std.mem.Allocator, spec: *const Spec) ![]lsp.CompletionItem {
-    var completions = std.ArrayList(lsp.CompletionItem).init(arena);
-
-    try completions.ensureUnusedCapacity(
-        spec.types.len + spec.variables.len + spec.functions.len,
-    );
-
-    for (spec.types) |typ| {
-        try completions.append(.{
-            .label = typ.name,
-            .kind = .class,
-            .documentation = .{
-                .kind = .markdown,
-                .value = try std.mem.join(arena, "\n\n", typ.description),
-            },
-        });
-    }
-
-    keywords: for (spec.keywords) |keyword| {
-        for (spec.types) |typ| {
-            if (std.mem.eql(u8, keyword.name, typ.name)) {
-                continue :keywords;
-            }
-        }
-
-        try completions.append(.{
-            .label = keyword.name,
-            .kind = .keyword,
-            .documentation = .{
-                .kind = .markdown,
-                .value = switch (keyword.kind) {
-                    .glsl => "Available in standard GLSL.",
-                    .vulkan => "Only available when targeting Vulkan.",
-                    .reserved => "Reserved for future use.",
-                },
-            },
-        });
-    }
-
-    for (spec.variables) |variable| {
-        var signature = std.ArrayList(u8).init(arena);
-        try signature.writer().print("{}", .{variable.modifiers});
-        try signature.appendSlice(" ");
-        try signature.appendSlice(variable.type);
-
-        try completions.append(.{
-            .label = variable.name,
-            .labelDetails = .{
-                .detail = try signature.toOwnedSlice(),
-            },
-            .kind = .variable,
-            .documentation = if (variable.description) |desc| .{
-                .kind = .markdown,
-                .value = try std.mem.join(arena, "\n\n", desc),
-            } else null,
-        });
-    }
-
-    for (spec.functions) |function| {
-        var anonymous_signature = std.ArrayList(u8).init(arena);
-        var named_signature = std.ArrayList(u8).init(arena);
-        try writeFunctionSignature(function, anonymous_signature.writer(), .{ .names = false });
-        try writeFunctionSignature(function, named_signature.writer(), .{ .names = true });
-
-        try completions.append(.{
-            .label = function.name,
-            .labelDetails = .{
-                .detail = try anonymous_signature.toOwnedSlice(),
-            },
-            .kind = .function,
-            .detail = try named_signature.toOwnedSlice(),
-            .documentation = if (function.description) |desc| .{
-                .kind = .markdown,
-                .value = try std.mem.join(arena, "\n\n", desc),
-            } else null,
-        });
-    }
-
-    return completions.toOwnedSlice();
-}
-
-fn writeFunctionSignature(function: Spec.Function, writer: anytype, options: struct { names: bool }) !void {
-    try writer.writeAll(function.return_type);
-    try writer.writeAll(" ");
-    if (options.names) try writer.writeAll(function.name);
-    try writer.writeAll("(");
-    for (function.parameters, 0..) |param, i| {
-        if (i != 0) try writer.writeAll(", ");
-        if (param.optional) try writer.writeAll("[");
-        if (param.modifiers) |modifiers| {
-            try writer.print("{}", .{modifiers});
-            try writer.writeAll(" ");
-        }
-        if (options.names) {
-            const array_start = std.mem.indexOfScalar(u8, param.type, '[') orelse param.type.len;
-            try writer.writeAll(param.type[0..array_start]);
-            try writer.writeAll(" ");
-            try writer.writeAll(param.name);
-            try writer.writeAll(param.type[array_start..]);
-        } else {
-            try writer.writeAll(param.type);
-        }
-        if (param.optional) try writer.writeAll("]");
-    }
-    try writer.writeAll(")");
-}
