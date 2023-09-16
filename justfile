@@ -19,7 +19,7 @@ test:
     zig build test --summary all {{flags}}
 
 test-file path:
-    zig test '{{path}}'
+    zig test {{flags}} '{{path}}'
 
 clean:
     rm -rf zig-cache zig-out
