@@ -105,6 +105,13 @@ pub const Node = union(enum) {
     @"<<": Token,
     @">>": Token,
 
+    @"==": Token,
+    @"!=": Token,
+    @"<": Token,
+    @"<=": Token,
+    @">": Token,
+    @">=": Token,
+
     @"=": Token,
     @"+=": Token,
     @"-=": Token,
@@ -116,13 +123,6 @@ pub const Node = union(enum) {
     @"^=": Token,
     @"<<=": Token,
     @">>=": Token,
-
-    @"==": Token,
-    @"!=": Token,
-    @"<": Token,
-    @"<=": Token,
-    @">": Token,
-    @">=": Token,
 
     @"&&": Token,
     @"||": Token,
@@ -137,7 +137,34 @@ pub const Node = union(enum) {
     expression_sequence: Range,
     assignment: Range,
     conditional: Range,
-    unary: Range,
+    infix: Range,
+    prefix: Range,
+    postfix: Range,
+    call: Range,
+    argument: Range,
+    selection: Range,
+
+    type_qualifier_list: Range,
+    array: Range,
+    array_specifier: Range,
+    field_declaration: Range,
+    field: Range,
+
+    precision_declaration: Range,
+    block_declaration: Range,
+    qualifier_declaration: Range,
+    variable_declaration: Range,
+    declaration: Range,
+    function_declaration: Range,
+    parameter: Range,
+
+    initializer_list: Range,
+    initializer: Range,
+
+    statement: Range,
+
+    case_label: Range,
+    default_label: Range,
 
     pub fn initToken(tag: Tag, token: Token) Node {
         switch (tag) {
@@ -256,18 +283,28 @@ pub const Parser = struct {
         }
     }
 
-    fn emitError(self: *@This(), message: []const u8) void {
+    fn emitDiagnostic(self: *@This(), diagnostic: Diagnostic) void {
         if (self.diagnostics) |diagnostics| {
-            self.deferError(diagnostics.append(.{
-                .span = self.next.getToken() orelse unreachable,
-                .message = message,
-            }));
+            self.deferError(diagnostics.append(diagnostic));
         }
     }
 
+    fn emitError(self: *@This(), message: []const u8) void {
+        self.emitDiagnostic(.{
+            .span = self.next.getToken() orelse unreachable,
+            .message = message,
+        });
+        self.close(self.open(), .invalid);
+    }
+
     fn advanceWithError(self: *@This(), message: []const u8) void {
-        self.emitError(message);
+        const m = self.open();
+        self.emitDiagnostic(.{
+            .span = self.next.getToken() orelse unreachable,
+            .message = message,
+        });
         self.advance();
+        self.close(m, .invalid);
     }
 
     const Mark = struct {
@@ -290,9 +327,9 @@ pub const Parser = struct {
         const end = start + tags.len;
 
         self.deferError(self.tree.nodes.ensureUnusedCapacity(self.allocator, tags.len));
+        self.tree.nodes.len = end;
         @memcpy(self.tree.nodes.items(.tags)[start..], tags);
         @memcpy(self.tree.nodes.items(.data)[start..], data);
-        self.tree.nodes.len += tags.len;
 
         self.stack.len = mark.index;
 
@@ -321,12 +358,512 @@ pub fn parseFile(p: *Parser) void {
 const external_declaration_first = TokenSet.initMany(&.{.@";"});
 
 fn externalDeclaration(p: *Parser) void {
+    const m = p.open();
+
     if (p.eat(.@";")) return;
+
+    if (p.eat(.keyword_precision)) {
+        switch (p.peek()) {
+            .keyword_lowp, .keyword_mediump, .keyword_highp => p.advance(),
+            else => p.emitError("expected `lowp`, `mediump`, or `highp`"),
+        }
+        typeSpecifier(p);
+        p.expect(.@";");
+        return p.close(m, .precision_declaration);
+    }
+
+    typeQualifier(p);
+    if (p.at(.identifier)) typeSpecifier(p);
+
+    if (p.eat(.@"{")) {
+        while (p.atAny(struct_field_declaration_first)) {
+            structFieldDeclaration(p);
+        }
+        p.expect(.@"}");
+        _ = p.eat(.identifier);
+        arraySpecifier(p, p.open());
+        p.expect(.@";");
+        return p.close(m, .block_declaration);
+    }
+
+    if (p.eat(.@";")) return p.close(m, .qualifier_declaration);
+
+    if (p.at(.@",")) {
+        while (p.eat(.@",")) p.expect(.identifier);
+        p.expect(.@";");
+        return p.close(m, .qualifier_declaration);
+    }
+
+    var first = true;
+    while (!p.eof() and !p.at(.@";")) : (first = false) {
+        const m_var = p.open();
+        p.expect(.identifier);
+
+        if (first and p.eat(.@"(")) {
+            // function declaration
+            while (!p.eof() and !p.at(.@")")) {
+                if (p.atAny(parameter_first)) {
+                    parameter(p);
+                } else {
+                    break;
+                }
+            }
+            p.expect(.@")");
+            if (p.at(.@"{")) {
+                block(p);
+            } else {
+                p.expect(.@";");
+            }
+
+            return p.close(m, .function_declaration);
+        }
+
+        if (p.at(.@"[")) arraySpecifier(p, p.open());
+        if (p.eat(.@"=")) initializer(p);
+        if (!p.at(.@";")) p.expect(.@",");
+        p.close(m_var, .variable_declaration);
+    }
+    p.expect(.@";");
+    return p.close(m, .declaration);
 }
 
-const type_qualifier_first = TokenSet.initMany(&.{});
+fn initializer(p: *Parser) void {
+    const m = p.open();
+    if (p.eat(.@"{")) {
+        while (!p.eof() and !p.at(.@"}")) {
+            const m_init = p.open();
+            initializer(p);
+            if (!p.at(.@"}")) p.expect(.@",");
+            p.close(m_init, .initializer);
+        }
+        p.expect(.@"}");
+        return p.close(m, .initializer_list);
+    } else {
+        assignmentExpression(p);
+    }
+}
 
-fn type_qualifier(p: *Parser) void {
+const parameter_first = type_qualifier_first.unionWith(type_specifier_first);
+
+fn parameter(p: *Parser) void {
+    const m = p.open();
+    typeQualifier(p);
+    typeSpecifier(p);
+    if (p.eat(.identifier)) {
+        if (p.at(.@"[")) {
+            arraySpecifier(p, p.open());
+        }
+    }
+
+    if (!p.at(.@")")) p.expect(.@",");
+    p.close(m, .parameter);
+}
+
+fn block(p: *Parser) void {
+    p.expect(.@"{");
+    while (!p.eof() and !p.at(.@"}")) {
+        if (p.atAny(statement_first)) {
+            statement(p);
+        } else {
+            break;
+        }
+    }
+    p.expect(.@"}");
+}
+
+const statement_first = TokenSet.initMany(&.{
+    .@";",
+    .@"{",
+    .keyword_do,
+    .keyword_while,
+    .keyword_for,
+    .keyword_if,
+    .keyword_switch,
+    .keyword_case,
+    .keyword_default,
+    .keyword_break,
+    .keyword_continue,
+    .keyword_return,
+}).unionWith(type_qualifier_first).unionWith(type_specifier_first).unionWith(expression_first);
+
+fn statement(p: *Parser) void {
+    const m = p.open();
+
+    switch (p.peek()) {
+        .@"{" => block(p),
+        .keyword_do => {
+            p.advance();
+            block(p);
+            p.expect(.keyword_while);
+            p.expect(.@"(");
+            expression(p);
+            p.expect(.@")");
+            p.expect(.@";");
+        },
+        .keyword_while => {
+            p.advance();
+            p.expect(.@"(");
+            expression(p);
+            p.expect(.@")");
+            block(p);
+        },
+        .keyword_for => {
+            p.advance();
+            p.expect(.@"(");
+            statement(p);
+            statement(p);
+            _ = expressionOpt(p);
+            expression(p);
+            p.expect(.@")");
+            block(p);
+        },
+        .keyword_if => {
+            p.advance();
+            p.expect(.@"(");
+            expression(p);
+            p.expect(.@")");
+            statement(p);
+            if (p.eat(.keyword_else)) statement(p);
+        },
+        .keyword_switch => {
+            p.advance();
+            p.expect(.@"(");
+            expression(p);
+            p.expect(.@")");
+            block(p);
+        },
+        .keyword_case => {
+            expression(p);
+            return p.close(m, .case_label);
+        },
+        .keyword_default => {
+            p.expect(.@":");
+            return p.close(m, .default_label);
+        },
+        .keyword_break, .keyword_continue, .keyword_discard => {
+            p.advance();
+            p.expect(.@";");
+        },
+        .keyword_return => {
+            p.advance();
+            expression(p);
+            p.expect(.@";");
+        },
+        else => {
+            if (!expressionOpt(p)) p.emitError("expected a statement");
+            p.expect(.@";");
+        },
+    }
+
+    p.close(m, .statement);
+}
+
+const expression_first = primary_expression_first.unionWith(unary_operators);
+
+pub fn expression(p: *Parser) void {
+    const m = p.open();
+    assignmentExpression(p);
+    while (p.eat(.@",")) {
+        assignmentExpression(p);
+        p.close(m, .expression_sequence);
+    }
+}
+
+fn expressionOpt(p: *Parser) bool {
+    const m = p.open();
+    if (!assignmentExpressionOpt(p)) return false;
+    while (p.eat(.@",")) {
+        assignmentExpression(p);
+        p.close(m, .expression_sequence);
+    }
+    return true;
+}
+
+const assignment_operator = TokenSet.initMany(&.{
+    .@"=",
+    .@"+=",
+    .@"-=",
+    .@"*=",
+    .@"/=",
+    .@"%=",
+    .@"<<=",
+    .@">>=",
+    .@"&=",
+    .@"^=",
+    .@"|=",
+});
+
+fn assignmentExpression(p: *Parser) void {
+    if (!assignmentExpressionOpt(p)) p.emitError("expected an expression");
+}
+
+fn assignmentExpressionOpt(p: *Parser) bool {
+    const m = p.open();
+    if (!constantExpressionOpt(p)) return false;
+    while (p.atAny(assignment_operator)) {
+        p.advance();
+        assignmentExpression(p);
+        p.close(m, .assignment);
+    }
+    return true;
+}
+
+fn constantExpression(p: *Parser) void {
+    if (!constantExpressionOpt(p)) p.emitError("expected an expression");
+}
+
+fn constantExpressionOpt(p: *Parser) bool {
+    const m = p.open();
+    if (!infixExpressionOpt(p)) return false;
+    if (p.eat(.@"?")) {
+        expression(p);
+        p.expect(.@":");
+        assignmentExpression(p);
+        p.close(m, .conditional);
+    }
+    return true;
+}
+
+const infix_operator_precedence = .{
+    .{ .@"*", .@"/", .@"%" },
+    .{ .@"+", .@"-" },
+    .{ .@"<<", .@">>" },
+    .{ .@"<", .@">", .@"<=", .@">=" },
+    .{ .@"==", .@"!=" },
+    .{.@"&"},
+    .{.@"^"},
+    .{.@"|"},
+    .{.@"&&"},
+    .{.@"^^"},
+    .{.@"||"},
+};
+
+const precedence_level_map = blk: {
+    var map = std.EnumMap(Node.Tag, u8){};
+    for (infix_operator_precedence, 0..) |level, index| {
+        for (level) |op| {
+            map.put(op, index);
+        }
+    }
+    break :blk map;
+};
+
+fn leftBindsStronger(lhs: Node.Tag, rhs: Node.Tag) bool {
+    const lhs_level = precedence_level_map.get(lhs) orelse return true;
+    const rhs_level = precedence_level_map.get(rhs) orelse return false;
+    return lhs_level < rhs_level;
+}
+
+fn infixExpressionOpt(p: *Parser) bool {
+    return infixExpressionOptImpl(p, .eof);
+}
+
+fn infixExpressionOptImpl(p: *Parser, lhs: Node.Tag) bool {
+    const m = p.open();
+    if (!unaryExpressionOpt(p)) return false;
+
+    while (true) {
+        const rhs = p.peek();
+        if (leftBindsStronger(lhs, rhs)) break;
+        p.advance();
+        if (!infixExpressionOptImpl(p, rhs)) {
+            p.emitError("expected an expression");
+        }
+        p.close(m, .infix);
+    }
+
+    return true;
+}
+
+const unary_operators = TokenSet.initMany(&.{
+    .@"+",
+    .@"-",
+    .@"!",
+    .@"~",
+    .@"++",
+    .@"--",
+});
+
+fn unaryExpressionOpt(p: *Parser) bool {
+    const m = p.open();
+    var has_operator = false;
+    while (p.atAny(unary_operators)) {
+        p.advance();
+        has_operator = true;
+    }
+
+    const has_expression = postfixExpressionOpt(p);
+
+    if (!has_expression and has_operator) p.emitError("expected expression");
+    if (has_operator) p.close(m, .prefix);
+
+    return has_operator or has_expression;
+}
+
+const postfix_operators = TokenSet.initMany(&.{
+    .@"[",
+    .@"(",
+    .@".",
+    .@"++",
+    .@"--",
+});
+
+const expression_recovery = TokenSet.initMany(&.{ .@";", .@"{", .@"}" });
+
+fn postfixExpressionOpt(p: *Parser) bool {
+    const m = p.open();
+    if (!primaryExpressionOpt(p)) return false;
+
+    while (true) {
+        switch (p.peek()) {
+            .@"[" => arraySpecifier(p, m),
+            .@"(" => {
+                p.advance();
+                while (!p.eof() and !p.at(.@")")) {
+                    if (p.atAny(expression_first)) {
+                        const m_arg = p.open();
+                        assignmentExpression(p);
+                        if (!p.at(.@")")) p.expect(.@",");
+                        p.close(m_arg, .argument);
+                    } else if (p.atAny(expression_recovery)) {
+                        break;
+                    } else {
+                        p.advanceWithError("expected an argument");
+                    }
+                }
+                p.expect(.@")");
+                p.close(m, .call);
+            },
+            .@"++", .@"--" => {
+                p.advance();
+                p.close(m, .postfix);
+            },
+            .@"." => {
+                p.advance();
+                p.expect(.identifier);
+                p.close(m, .selection);
+            },
+            else => break,
+        }
+    }
+
+    return true;
+}
+
+const primary_expression_first = TokenSet.initMany(&.{
+    .identifier,
+    .number,
+    .keyword_true,
+    .keyword_false,
+    .@"(",
+    .keyword_struct,
+});
+
+fn primaryExpressionOpt(p: *Parser) bool {
+    switch (p.peek()) {
+        .identifier, .number, .keyword_true, .keyword_false => {
+            p.advance();
+            return true;
+        },
+        .@"(" => {
+            const m = p.open();
+            p.advance();
+            expression(p);
+            p.expect(.@")");
+            p.close(m, .parenthized);
+            return true;
+        },
+        .keyword_struct => {
+            p.advance();
+            _ = p.eat(.identifier);
+            p.expect(.@"{");
+            while (p.atAny(struct_field_declaration_first)) {
+                structFieldDeclaration(p);
+            }
+            p.expect(.@"}");
+            return true;
+        },
+        else => return false,
+    }
+}
+
+const struct_field_declaration_first = TokenSet.initMany(&.{})
+    .unionWith(type_qualifier_first)
+    .unionWith(type_specifier_first);
+
+fn structFieldDeclaration(p: *Parser) void {
+    const m = p.open();
+    typeQualifier(p);
+    typeSpecifier(p);
+    while (true) {
+        const m_field = p.open();
+        if (!p.eat(.identifier)) break;
+        if (p.at(.@"[")) arraySpecifier(p, p.open());
+        if (!p.at(.@";")) p.expect(.@",");
+        p.close(m_field, .field);
+    }
+    p.expect(.@";");
+    p.close(m, .field_declaration);
+}
+
+const type_specifier_first = TokenSet.initMany(&.{.identifier});
+
+fn typeSpecifier(p: *Parser) void {
+    const m = p.open();
+    p.expect(.identifier);
+    if (p.at(.@"[")) arraySpecifier(p, m);
+}
+
+fn arraySpecifier(p: *Parser, m: Parser.Mark) void {
+    while (true) {
+        const inner = p.open();
+        if (!p.eat(.@"[")) break;
+        _ = constantExpressionOpt(p);
+        p.expect(.@"]");
+        p.close(inner, .array);
+    }
+    p.close(m, .array_specifier);
+}
+
+fn typeQualifier(p: *Parser) void {
+    var any = false;
+    const m = p.open();
+    while (p.atAny(type_qualifier_first)) {
+        any = true;
+        typeQualifierSingle(p);
+    }
+    if (any) p.close(m, .type_qualifier_list);
+}
+
+const type_qualifier_first = TokenSet.initMany(&.{
+    .keyword_const,
+    .keyword_in,
+    .keyword_out,
+    .keyword_inout,
+    .keyword_centroid,
+    .keyword_patch,
+    .keyword_sample,
+    .keyword_uniform,
+    .keyword_buffer,
+    .keyword_shared,
+    .keyword_coherent,
+    .keyword_volatile,
+    .keyword_restrict,
+    .keyword_readonly,
+    .keyword_writeonly,
+    .keyword_layout,
+    .keyword_subroutine,
+    .keyword_highp,
+    .keyword_mediump,
+    .keyword_lowp,
+    .keyword_smooth,
+    .keyword_flat,
+    .keyword_noperspective,
+    .keyword_invariant,
+    .keyword_precise,
+});
+
+fn typeQualifierSingle(p: *Parser) void {
     switch (p.peek()) {
         // storage_qualifier
         .keyword_const,
@@ -351,21 +888,28 @@ fn type_qualifier(p: *Parser) void {
             p.advance();
             p.expect(.@"(");
             while (true) {
-                if (p.eat(.identifier)) {
-                    p.expect(.@"=");
-                    constantExpression(p);
-                } else {
-                    p.expect(.keyword_shared);
+                switch (p.peek()) {
+                    .identifier => {
+                        p.advance();
+                        if (p.eat(.@"=")) constantExpression(p);
+                    },
+                    .keyword_shared => p.advance(),
+                    else => break,
                 }
-                if (p.at(.@")")) break else p.expect(.@",");
+                if (p.at(.@")")) break;
+                p.expect(.@",");
             }
             p.expect(.@")");
         },
 
         // precision_qualifier
+        .keyword_highp, .keyword_mediump, .keyword_lowp => p.advance(),
         // interpolation_qualifier
+        .keyword_smooth, .keyword_flat, .keyword_noperspective => p.advance(),
         // invariant_qualifier
+        .keyword_invariant => p.advance(),
         // precise_qualifier
+        .keyword_precise => p.advance(),
 
         .keyword_subroutine => {
             const m = p.open();
@@ -378,132 +922,8 @@ fn type_qualifier(p: *Parser) void {
             }
             p.close(m, .subroutine);
         },
+
         else => return,
-    }
-}
-
-fn expression(p: *Parser) void {
-    const m = p.open();
-    assignmentExpression(p);
-    while (p.eat(.@",")) {
-        assignmentExpression(p);
-        p.close(m, .expression_sequence);
-    }
-}
-
-const assignment_operator = TokenSet.initMany(&.{
-    .@"=",
-    .@"+=",
-    .@"-=",
-    .@"*=",
-    .@"/=",
-    .@"%=",
-    .@"<<=",
-    .@">>=",
-    .@"&=",
-    .@"^=",
-    .@"|=",
-});
-
-fn assignmentExpression(p: *Parser) void {
-    const m = p.open();
-    constantExpression();
-    while (p.atAny(assignment_operator)) {
-        p.advance();
-        assignmentExpression(p);
-        p.close(m, .assignment);
-    }
-}
-
-fn constantExpression(p: *Parser) void {
-    const m = p.open();
-    if (!primaryExpressionOpt(p)) p.emitError("expected an expression");
-    if (p.eat(.@"?")) {
-        expression(p);
-        p.expect(.@":");
-        assignmentExpression(p);
-        p.close(m, .conditional);
-    }
-}
-
-fn infixExpressionOpt(p: *Parser) bool {
-    if (!unaryExpressionOpt(p)) return false;
-}
-
-const unary_operators = TokenSet.initMany(&.{
-    .@"+",
-    .@"-",
-    .@"!",
-    .@"~",
-    .@"++",
-    .@"--",
-});
-
-fn unaryExpressionOpt(p: *Parser) bool {
-    const m = p.open();
-    var has_operator = false;
-    while (p.atAny(unary_operators)) {
-        p.advance();
-        has_operator = true;
-    }
-
-    const has_expression = postfixExpressionOpt(p);
-
-    if (!has_expression and has_operator) p.emitError("expected expression");
-    if (has_operator) p.close(m, .unary);
-
-    return has_operator or has_expression;
-}
-
-const postfix_operators = TokenSet.initMany(&.{
-    .@"[",
-    .@"(",
-    .@".",
-    .@"++",
-    .@"--",
-});
-
-fn postfixExpressionOpt(p: *Parser) bool {
-    const m = p.open();
-    if (!primaryExpressionOpt(p)) return false;
-
-    while (true) {
-        switch (p.peek()) {
-            .@"[" => {
-                p.advance();
-                expression(p);
-                p.expect(.@"]");
-                p.close(m, .index);
-            },
-            .@"(" => {
-                p.advance();
-                expression(p);
-                p.expect(.@")");
-                p.close(m, .call);
-            },
-            else => break,
-        }
-        if (p.eat(.@"[")) {
-            continue;
-        }
-    }
-}
-
-fn primaryExpressionOpt(p: *Parser) bool {
-    switch (p.peek()) {
-        .identifier, .number, .keyword_true, .keyword_false => {
-            p.advance();
-            return true;
-        },
-        .@"(" => {
-            const m = p.open();
-            p.advance();
-            expression(p);
-            p.expect(.@")");
-            p.close(m, .parenthized);
-            return true;
-        },
-        else => return false,
     }
 }
 
@@ -702,6 +1122,7 @@ pub const Tokenizer = struct {
             else => {
                 comptime var valid_char = std.StaticBitSet(256).initEmpty();
                 comptime {
+                    @setEvalBranchQuota(2000);
                     for (std.ascii.whitespace) |c| valid_char.set(c);
                     for ('0'..'9' + 1) |c| valid_char.set(c);
                     for ('a'..'z' + 1) |c| valid_char.set(c);
