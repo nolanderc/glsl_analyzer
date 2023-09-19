@@ -1,5 +1,20 @@
 const std = @import("std");
 
+pub fn parse(
+    allocator: std.mem.Allocator,
+    source: []const u8,
+    options: struct {
+        diagnostics: ?*std.ArrayList(Diagnostic) = null,
+    },
+) !Tree {
+    var parser = Parser.init(allocator, source);
+    parser.diagnostics = options.diagnostics;
+    defer parser.deinit();
+    parser.advance();
+    parseFile(&parser);
+    return parser.finish();
+}
+
 pub const Node = union(enum) {
     pub const Tag = std.meta.Tag(Node);
 
@@ -132,7 +147,6 @@ pub const Node = union(enum) {
     @"--": Token,
 
     invalid: Range,
-    subroutine: Range,
     parenthized: Range,
     expression_sequence: Range,
     assignment: Range,
@@ -150,27 +164,36 @@ pub const Node = union(enum) {
     field_declaration: Range,
     field: Range,
 
+    subroutine_qualifier: Range,
+    layout_qualifier: Range,
     precision_declaration: Range,
     block_declaration: Range,
     qualifier_declaration: Range,
     variable_declaration: Range,
     declaration: Range,
     function_declaration: Range,
+    parameter_list: Range,
     parameter: Range,
 
     initializer_list: Range,
     initializer: Range,
 
+    block: Range,
     statement: Range,
 
     case_label: Range,
     default_label: Range,
 
+    file: Range,
+
+    fn Payload(comptime tag: Tag) type {
+        return @TypeOf(@field(@as(Node, undefined), @tagName(tag)));
+    }
+
     pub fn initToken(tag: Tag, token: Token) Node {
         switch (tag) {
             inline else => |constant| {
-                const Payload = @TypeOf(@field(@as(Node, undefined), @tagName(constant)));
-                if (Payload == Token) {
+                if (Payload(constant) == Token) {
                     return @unionInit(Node, @tagName(constant), token);
                 } else {
                     unreachable;
@@ -186,10 +209,82 @@ pub const Node = union(enum) {
             },
         }
     }
+
+    pub fn getRange(self: @This()) ?Range {
+        switch (self) {
+            inline else => |payload| {
+                return if (@TypeOf(payload) == Range) payload else null;
+            },
+        }
+    }
+
+    pub const Kind = union(enum) {
+        token: Token,
+        range: Range,
+    };
+
+    pub fn kind(self: @This()) Kind {
+        switch (self) {
+            inline else => |payload| {
+                switch (@TypeOf(payload)) {
+                    Token => return .{ .token = payload },
+                    Range => return .{ .range = payload },
+                    else => @compileError("invalid payload type"),
+                }
+            },
+        }
+    }
 };
 
 pub const Tree = struct {
     nodes: std.MultiArrayList(Node) = .{},
+
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        self.nodes.deinit(allocator);
+    }
+
+    pub fn write(tree: @This(), source: []const u8, writer: anytype) !void {
+        const Formatter = struct {
+            tree: Tree,
+            writer: @TypeOf(writer),
+            source: []const u8,
+            indent: usize = 0,
+
+            fn writeNode(self: *@This(), index: usize) !void {
+                const indent = self.indent;
+
+                const node = self.tree.nodes.get(index);
+                const name = @tagName(node);
+
+                switch (node.kind()) {
+                    .token => |token| {
+                        const text = self.source[token.start..token.end];
+                        try self.writer.writeByteNTimes(' ', indent);
+
+                        if (std.ascii.isAlphabetic(name[0])) {
+                            try self.writer.print("{s} '{'}'\n", .{
+                                name, std.zig.fmtEscapes(text),
+                            });
+                        } else {
+                            try self.writer.print("{s}\n", .{name});
+                        }
+                    },
+                    .range => |range| {
+                        defer self.indent = indent;
+                        try self.writer.writeByteNTimes(' ', indent);
+                        try self.writer.print("{s}\n", .{name});
+                        self.indent += 2;
+                        for (range.start..range.end) |child| {
+                            try self.writeNode(child);
+                        }
+                    },
+                }
+            }
+        };
+
+        var f = Formatter{ .tree = tree, .source = source, .writer = writer };
+        try f.writeNode(tree.nodes.len - 1);
+    }
 };
 
 pub const Token = struct {
@@ -227,8 +322,23 @@ pub const Parser = struct {
         return .{
             .allocator = allocator,
             .tokenizer = Tokenizer{ .source = source },
-            .next = undefined,
+            .next = .{ .eof = .{ .start = 0, .end = 0 } },
         };
+    }
+
+    pub fn deinit(self: *@This()) void {
+        self.stack.deinit(self.allocator);
+        self.tree.deinit(self.allocator);
+    }
+
+    pub fn finish(self: *@This()) !Tree {
+        if (self.deferred_error) |err| return err;
+
+        try self.tree.nodes.append(self.allocator, self.stack.pop());
+
+        const tree = self.tree;
+        self.tree = .{};
+        return tree;
     }
 
     fn deferError(self: *@This(), value: anytype) @typeInfo(@TypeOf(value)).ErrorUnion.payload {
@@ -346,6 +456,8 @@ pub const Parser = struct {
 };
 
 pub fn parseFile(p: *Parser) void {
+    const m = p.open();
+
     while (!p.eof()) {
         if (p.atAny(external_declaration_first)) {
             externalDeclaration(p);
@@ -353,9 +465,13 @@ pub fn parseFile(p: *Parser) void {
             p.advanceWithError("expected a declaration");
         }
     }
+
+    p.close(m, .file);
 }
 
-const external_declaration_first = TokenSet.initMany(&.{.@";"});
+const external_declaration_first = TokenSet.initMany(&.{.@";"})
+    .unionWith(type_qualifier_first)
+    .unionWith(type_specifier_first);
 
 fn externalDeclaration(p: *Parser) void {
     const m = p.open();
@@ -380,8 +496,8 @@ fn externalDeclaration(p: *Parser) void {
             structFieldDeclaration(p);
         }
         p.expect(.@"}");
-        _ = p.eat(.identifier);
-        arraySpecifier(p, p.open());
+        const m_var = p.open();
+        if (p.eat(.identifier)) arraySpecifier(p, m_var);
         p.expect(.@";");
         return p.close(m, .block_declaration);
     }
@@ -399,26 +515,31 @@ fn externalDeclaration(p: *Parser) void {
         const m_var = p.open();
         p.expect(.identifier);
 
-        if (first and p.eat(.@"(")) {
-            // function declaration
-            while (!p.eof() and !p.at(.@")")) {
-                if (p.atAny(parameter_first)) {
-                    parameter(p);
-                } else {
-                    break;
+        if (first) {
+            const m_params = p.open();
+            if (p.eat(.@"(")) {
+                // function declaration
+                while (!p.eof() and !p.at(.@")")) {
+                    if (p.atAny(parameter_first)) {
+                        parameter(p);
+                    } else {
+                        break;
+                    }
                 }
-            }
-            p.expect(.@")");
-            if (p.at(.@"{")) {
-                block(p);
-            } else {
-                p.expect(.@";");
-            }
+                p.expect(.@")");
+                p.close(m_params, .parameter_list);
 
-            return p.close(m, .function_declaration);
+                if (p.at(.@"{")) {
+                    block(p);
+                } else {
+                    p.expect(.@";");
+                }
+
+                return p.close(m, .function_declaration);
+            }
         }
 
-        if (p.at(.@"[")) arraySpecifier(p, p.open());
+        if (p.at(.@"[")) arraySpecifier(p, m_var);
         if (p.eat(.@"=")) initializer(p);
         if (!p.at(.@";")) p.expect(.@",");
         p.close(m_var, .variable_declaration);
@@ -449,9 +570,10 @@ fn parameter(p: *Parser) void {
     const m = p.open();
     typeQualifier(p);
     typeSpecifier(p);
+    const m_name = p.open();
     if (p.eat(.identifier)) {
         if (p.at(.@"[")) {
-            arraySpecifier(p, p.open());
+            arraySpecifier(p, m_name);
         }
     }
 
@@ -460,6 +582,7 @@ fn parameter(p: *Parser) void {
 }
 
 fn block(p: *Parser) void {
+    const m = p.open();
     p.expect(.@"{");
     while (!p.eof() and !p.at(.@"}")) {
         if (p.atAny(statement_first)) {
@@ -469,6 +592,7 @@ fn block(p: *Parser) void {
         }
     }
     p.expect(.@"}");
+    p.close(m, .block);
 }
 
 const statement_first = TokenSet.initMany(&.{
@@ -550,8 +674,28 @@ fn statement(p: *Parser) void {
             p.expect(.@";");
         },
         else => {
-            if (!expressionOpt(p)) p.emitError("expected a statement");
+            var is_decl = false;
+
+            if (p.atAny(type_qualifier_first)) {
+                typeQualifier(p);
+                is_decl = true;
+            } else {
+                if (!expressionOpt(p)) p.emitError("expected a statement");
+            }
+
+            while (p.at(.identifier)) {
+                is_decl = true;
+                const m_var = p.open();
+                p.advance();
+                if (p.at(.@"[")) arraySpecifier(p, m_var);
+                if (p.eat(.@"=")) initializer(p);
+                if (!p.at(.@";")) p.expect(.@",");
+                p.close(m_var, .variable_declaration);
+            }
+
             p.expect(.@";");
+
+            if (is_decl) p.close(m, .declaration);
         },
     }
 
@@ -798,7 +942,7 @@ fn structFieldDeclaration(p: *Parser) void {
     while (true) {
         const m_field = p.open();
         if (!p.eat(.identifier)) break;
-        if (p.at(.@"[")) arraySpecifier(p, p.open());
+        if (p.at(.@"[")) arraySpecifier(p, m_field);
         if (!p.at(.@";")) p.expect(.@",");
         p.close(m_field, .field);
     }
@@ -885,6 +1029,7 @@ fn typeQualifierSingle(p: *Parser) void {
 
         // layout_qualifier
         .keyword_layout => {
+            const m = p.open();
             p.advance();
             p.expect(.@"(");
             while (true) {
@@ -900,6 +1045,7 @@ fn typeQualifierSingle(p: *Parser) void {
                 p.expect(.@",");
             }
             p.expect(.@")");
+            p.close(m, .layout_qualifier);
         },
 
         // precision_qualifier
@@ -920,7 +1066,7 @@ fn typeQualifierSingle(p: *Parser) void {
                 }
                 p.expect(.@")");
             }
-            p.close(m, .subroutine);
+            p.close(m, .subroutine_qualifier);
         },
 
         else => return,
@@ -1272,4 +1418,33 @@ test "tokenize" {
     for (strings) |expected| {
         try std.testing.expectEqualStrings(expected, tokenizer.nextText() orelse "");
     }
+}
+
+test "parse and write" {
+    const source =
+        \\#version 330 core
+        \\layout (location = 0) in vec3 aPos; // the position variable
+        \\  
+        \\out vec4 vertexColor; // specify a color output to the fragment shader
+        \\
+        \\void main()
+        \\{
+        \\    gl_Position = vec4(aPos, 1.0); // vec4 from vec3
+        \\    vertexColor = vec4(0.5, 0.0, 0.0, 1.0); // set the output variable
+        \\    int[4][2] x = 123;
+        \\}
+    ;
+
+    var tree = try parse(std.testing.allocator, source, .{});
+    defer tree.deinit(std.testing.allocator);
+
+    var buffer = std.ArrayList(u8).init(std.testing.allocator);
+    defer buffer.deinit();
+
+    try tree.write(source, buffer.writer());
+
+    try std.testing.expectEqualStrings(
+        \\file
+        \\  qualifier_declaration
+    , buffer.items);
 }
