@@ -186,6 +186,9 @@ pub const Node = union(enum) {
 
     block: Range,
     statement: Range,
+    condition_list: Range,
+    if_branch: Range,
+    else_branch: Range,
 
     case_label: Range,
     default_label: Range,
@@ -641,52 +644,86 @@ const statement_first = TokenSet.initMany(&.{
     .keyword_break,
     .keyword_continue,
     .keyword_return,
-}).unionWith(type_qualifier_first).unionWith(type_specifier_first).unionWith(expression_first);
+}).unionWith(type_qualifier_first)
+    .unionWith(type_specifier_first)
+    .unionWith(expression_first);
 
 fn statement(p: *Parser) void {
     const m = p.open();
 
     switch (p.peek()) {
-        .@"{" => block(p),
+        .@"{" => return block(p),
         .keyword_do => {
             p.advance();
             block(p);
             p.expect(.keyword_while);
-            p.expect(.@"(");
-            expression(p);
-            p.expect(.@")");
+            {
+                const m_cond = p.open();
+                p.expect(.@"(");
+                expression(p);
+                p.expect(.@")");
+                p.close(m_cond, .condition_list);
+            }
             p.expect(.@";");
         },
         .keyword_while => {
             p.advance();
-            p.expect(.@"(");
-            expression(p);
-            p.expect(.@")");
-            block(p);
+            {
+                const m_cond = p.open();
+                p.expect(.@"(");
+                expression(p);
+                p.expect(.@")");
+                p.close(m_cond, .condition_list);
+            }
+            statement(p);
         },
         .keyword_for => {
             p.advance();
-            p.expect(.@"(");
+            {
+                const m_cond = p.open();
+                p.expect(.@"(");
+                if (!p.eat(.@";")) statement(p);
+                if (!p.eat(.@";")) statement(p);
+                _ = expressionOpt(p);
+                p.expect(.@")");
+                p.close(m_cond, .condition_list);
+            }
             statement(p);
-            statement(p);
-            _ = expressionOpt(p);
-            expression(p);
-            p.expect(.@")");
-            block(p);
         },
         .keyword_if => {
-            p.advance();
-            p.expect(.@"(");
-            expression(p);
-            p.expect(.@")");
-            statement(p);
-            if (p.eat(.keyword_else)) statement(p);
+            var m_branch = p.open();
+            while (true) {
+                p.expect(.keyword_if);
+                {
+                    const m_cond = p.open();
+                    p.expect(.@"(");
+                    expression(p);
+                    p.expect(.@")");
+                    p.close(m_cond, .condition_list);
+                }
+                statement(p);
+                p.close(m_branch, .if_branch);
+
+                m_branch = p.open();
+
+                if (!p.eat(.keyword_else)) break;
+                if (p.at(.keyword_if)) continue;
+
+                statement(p);
+                p.close(m_branch, .else_branch);
+
+                break;
+            }
         },
         .keyword_switch => {
             p.advance();
-            p.expect(.@"(");
-            expression(p);
-            p.expect(.@")");
+            {
+                const m_cond = p.open();
+                p.expect(.@"(");
+                expression(p);
+                p.expect(.@")");
+                p.close(m_cond, .condition_list);
+            }
             block(p);
         },
         .keyword_case => {
@@ -703,7 +740,7 @@ fn statement(p: *Parser) void {
         },
         .keyword_return => {
             p.advance();
-            expression(p);
+            _ = expressionOpt(p);
             p.expect(.@";");
         },
         else => {
@@ -723,7 +760,7 @@ fn statement(p: *Parser) void {
 
             p.expect(.@";");
 
-            if (is_decl) p.close(m, .declaration);
+            if (is_decl) return p.close(m, .declaration);
         },
     }
 
@@ -785,11 +822,13 @@ fn assignmentExpression(p: *Parser) void {
 fn assignmentExpressionOpt(p: *Parser) bool {
     const m = p.open();
     if (!constantExpressionOpt(p)) return false;
+    var has_assignment = false;
     while (p.atAny(assignment_operators)) {
         p.advance();
+        has_assignment = true;
         assignmentExpression(p);
-        p.close(m, .assignment);
     }
+    if (has_assignment) p.close(m, .assignment);
     return true;
 }
 
@@ -833,6 +872,12 @@ const precedence_level_map = blk: {
     break :blk map;
 };
 
+pub const infix_operators = blk: {
+    var set = TokenSet.initEmpty();
+    for (infix_operator_precedence) |level| for (level) |op| set.insert(op);
+    break :blk set;
+};
+
 fn leftBindsStronger(lhs: Node.Tag, rhs: Node.Tag) bool {
     const lhs_level = precedence_level_map.get(lhs);
     const rhs_level = precedence_level_map.get(rhs);
@@ -847,15 +892,19 @@ fn infixExpressionOptImpl(p: *Parser, lhs: Node.Tag) bool {
     const m = p.open();
     if (!unaryExpressionOpt(p)) return false;
 
+    var has_operator = false;
     while (true) {
         const rhs = p.peek();
         if (leftBindsStronger(lhs, rhs)) break;
         p.advance();
+        has_operator = true;
+
         if (!infixExpressionOptImpl(p, rhs)) {
             p.emitError("expected an expression");
         }
-        p.close(m, .infix);
     }
+
+    if (has_operator) p.close(m, .infix);
 
     return true;
 }
@@ -1264,7 +1313,13 @@ pub const Tokenizer = struct {
                     return self.token(.comment, i);
                 },
                 '*' => {
-                    while (i + 1 < text.len and text[i] != '*' and text[i + 1] != '/') i += 1;
+                    i += 2;
+                    while (i + 1 < text.len) : (i += 1) {
+                        if (std.mem.startsWith(u8, text[i..], "*/")) {
+                            i += 2;
+                            break;
+                        }
+                    }
                     return self.token(.comment, i);
                 },
                 '=' => return self.token(.@"/=", i + 2),

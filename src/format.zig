@@ -36,6 +36,8 @@ fn Writer(comptime ChildWriter: type) type {
         last_emit: u32 = 0,
         last_ignored: u32 = 0,
 
+        current_line: u32 = 0,
+
         const LineBreaks = struct { min: u32 = 0, max: u32 = 2 };
 
         pub fn writeSpace(self: *Self) void {
@@ -54,6 +56,7 @@ fn Writer(comptime ChildWriter: type) type {
                 start = end + 1;
                 self.needs_indent = true;
                 self.preceded_by_space = true;
+                self.current_line += 1;
             }
             if (start < bytes.len) try self.writeLine(bytes[0..]);
         }
@@ -65,20 +68,26 @@ fn Writer(comptime ChildWriter: type) type {
         }
 
         fn writeToChildRaw(self: *Self, bytes: []const u8) !void {
-            try self.flushIndent();
+            var extra_lines: u32 = 0;
+            for (bytes) |byte| extra_lines += @intFromBool(byte == '\n');
+            self.current_line += extra_lines;
+
+            if (self.needs_indent) {
+                self.needs_indent = false;
+                try self.emitIndent();
+            }
+
             if (self.pending_space) {
                 self.pending_space = false;
-                if (!self.preceded_by_space) try self.child_writer.writeByte(' ');
+                if (!self.preceded_by_space) {
+                    try self.child_writer.writeByte(' ');
+                }
             }
-            try self.child_writer.writeAll(bytes);
-            self.preceded_by_space = bytes[bytes.len - 1] == ' ';
-        }
 
-        fn flushIndent(self: *Self) !void {
-            if (self.needs_indent) {
-                try self.emitIndent();
-                self.needs_indent = false;
-            }
+            try self.child_writer.writeAll(bytes);
+
+            const last = bytes[bytes.len - 1];
+            self.preceded_by_space = last == ' ' or last == '\n';
         }
 
         fn emitLeadingTokens(self: *Self, until: u32) !void {
@@ -92,6 +101,13 @@ fn Writer(comptime ChildWriter: type) type {
                 try self.emitLeadingWhitespace(next.start, .{});
                 if (!self.preceded_by_space) self.writeSpace();
                 try self.writeAll(self.source[next.start..next.end]);
+
+                if (std.mem.startsWith(u8, self.source[next.start..next.end], "/*")) {
+                    self.writeSpace();
+                } else {
+                    self.line_breaks.min = 1;
+                }
+
                 self.last_emit = next.end;
             }
         }
@@ -118,22 +134,21 @@ fn Writer(comptime ChildWriter: type) type {
         }
 
         pub fn emitNoLeadingWhitespace(self: *Self, token: parse.Token) !void {
-            try self.emitLeadingTokens(token.start);
-            try self.writeAll(self.source[token.start..token.end]);
-            self.last_emit = token.end;
+            self.line_breaks.max = @max(self.line_breaks.min, 0);
+            try self.emit(token);
         }
 
         pub fn emitIndent(self: *Self) !void {
-            try self.child_writer.writeByteNTimes(' ', self.indentation);
-            self.preceded_by_space = self.indentation > 0;
+            try self.child_writer.writeByteNTimes(' ', self.indentation * 4);
+            if (self.indentation > 0) self.preceded_by_space = true;
         }
 
         pub fn indent(self: *Self) void {
-            self.indentation += 4;
+            self.indentation += 1;
         }
 
         pub fn dedent(self: *Self) void {
-            self.indentation -= 4;
+            self.indentation -= 1;
         }
     };
 }
@@ -160,16 +175,23 @@ fn formatNode(tree: parse.Tree, current: usize, writer: anytype) !void {
                 const tag = tree.tag(child);
 
                 if (tag == .@"}") {
+                    const token = tree.nodes.get(child).@"}";
+                    try writer.emitLeadingTokens(token.start);
+
                     writer.dedent();
                     if (has_children) {
                         writer.line_breaks.min = 1;
                         writer.line_breaks.max = 1;
                     } else {
-                        writer.line_breaks.min = 0;
-                        writer.line_breaks.max = 0;
+                        writer.line_breaks.min = @max(0, writer.line_breaks.min);
+                        writer.line_breaks.max = @max(0, writer.line_breaks.min);
                     }
                 } else {
                     has_children = inside_block;
+                }
+
+                if (tag != .@"{" and tag != .@"}") {
+                    writer.line_breaks.min = 1;
                 }
 
                 try formatNode(tree, child, writer);
@@ -183,54 +205,98 @@ fn formatNode(tree: parse.Tree, current: usize, writer: anytype) !void {
         },
 
         // emit without spaces between childern
-        .layout_qualifier, .prefix => |children| {
+        .layout_qualifier, .prefix, .postfix => |children| {
             for (children.start..children.end) |child| {
                 try formatNode(tree, child, writer);
+            }
+        },
+
+        .parameter_list, .call, .condition_list => |children| {
+            const start_line = writer.current_line;
+
+            for (children.start..children.end) |child| {
+                switch (tree.nodes.get(child)) {
+                    .@"(" => |token| {
+                        try writer.emitNoLeadingWhitespace(token);
+                        writer.indent();
+                    },
+                    .@")" => |token| {
+                        writer.dedent();
+                        if (writer.current_line == start_line) {
+                            try writer.emitNoLeadingWhitespace(token);
+                        } else {
+                            try writer.emit(token);
+                        }
+                    },
+                    else => try formatNode(tree, child, writer),
+                }
+            }
+        },
+
+        .@";",
+        .@":",
+        .@",",
+        => |token| {
+            try writer.emitNoLeadingWhitespace(token);
+            writer.writeSpace();
+        },
+
+        .if_branch, .else_branch => |children| {
+            for (children.start..children.end) |child| {
+                const tag = tree.tag(child);
+                if (child != children.start) writer.writeSpace();
+
+                if (child + 1 == children.end and tag != .block) {
+                    writer.indent();
+                    try formatNode(tree, child, writer);
+                    writer.dedent();
+                } else {
+                    try formatNode(tree, child, writer);
+                }
             }
         },
 
         .statement => |children| {
-            writer.line_breaks.min = 1;
-            for (children.start..children.end) |child| {
-                try formatNode(tree, child, writer);
-            }
-        },
-
-        .field_declaration => |children| {
-            writer.line_breaks.min = 1;
-            for (children.start..children.end) |child| {
-                if (child != children.start and needsLeadingSpace(tree.tag(child)))
-                    writer.writeSpace();
-                try formatNode(tree, child, writer);
-            }
-        },
-
-        .parameter_list,
-        .call,
-        => |children| {
-            var first_parameter = true;
             for (children.start..children.end) |child| {
                 const child_tag = tree.tag(child);
+                if (child != children.start and needsLeadingSpace(child_tag)) writer.writeSpace();
 
-                if (child_tag == .parameter or child_tag == .argument) {
-                    if (first_parameter) {
-                        first_parameter = false;
-                    } else {
-                        writer.writeSpace();
-                    }
+                if (child + 1 == children.end and
+                    child_tag != .block and
+                    child_tag != .if_branch and
+                    child_tag != .else_branch)
+                {
+                    writer.indent();
+                    try formatNode(tree, child, writer);
+                    writer.dedent();
+                } else {
+                    try formatNode(tree, child, writer);
                 }
 
-                if (child_tag == .@"(") writer.indent();
-                if (child_tag == .@")") writer.dedent();
-
-                try formatNode(tree, child, writer);
+                if (child == children.start) {
+                    switch (child_tag) {
+                        .keyword_break,
+                        .keyword_continue,
+                        .keyword_do,
+                        .keyword_for,
+                        .keyword_while,
+                        .keyword_switch,
+                        .keyword_case,
+                        .keyword_default,
+                        .keyword_if,
+                        .keyword_else,
+                        .keyword_return,
+                        => writer.line_breaks = .{ .min = 0, .max = 0 },
+                        else => {},
+                    }
+                }
             }
         },
-
-        .@";", .@"," => |token| try writer.emitNoLeadingWhitespace(token),
 
         // emit tokens separated by spaces
         inline else => |payload| {
+            const operators = comptime parse.assignment_operators.unionWith(parse.infix_operators);
+
             if (@TypeOf(payload) == parse.Token) {
                 try writer.emit(payload);
             } else {
@@ -239,10 +305,16 @@ fn formatNode(tree: parse.Tree, current: usize, writer: anytype) !void {
                     if (child != payload.start and needsLeadingSpace(tag))
                         writer.writeSpace();
 
+                    if (operators.contains(tag)) {
+                        writer.line_breaks.min = @max(0, writer.line_breaks.min);
+                        writer.line_breaks.max = 1;
+                        writer.indentation = old_indentation + 1;
+                    }
+
                     try formatNode(tree, child, writer);
 
-                    if (parse.assignment_operators.contains(tag)) {
-                        writer.line_breaks = .{ .min = 0, .max = 0 };
+                    if (operators.contains(tag)) {
+                        writer.line_breaks = .{ .min = 0, .max = 1 };
                     }
                 }
             }
@@ -252,9 +324,12 @@ fn formatNode(tree: parse.Tree, current: usize, writer: anytype) !void {
 
 fn needsLeadingSpace(tag: parse.Node.Tag) bool {
     return switch (tag) {
+        .@":",
         .@";",
         .@",",
         .parameter_list,
+        .array,
+        .array_specifier,
         => false,
         else => true,
     };
@@ -363,8 +438,21 @@ test "format assignment" {
         \\}
     ,
         \\void main() {
-        \\    int x = 1 + 1;
-        \\    x = -1;
+        \\    int x =
+        \\        1 + 1;
+        \\    x =
+        \\        -1;
+        \\}
+        \\
+    );
+}
+
+test "format multiline infix" {
+    try expectIsFormatted(
+        \\void main() {
+        \\    int x = 1 + 2
+        \\            + 3 * 4
+        \\            + 5;
         \\}
         \\
     );
@@ -379,11 +467,51 @@ test "format call" {
         \\              3      ,4,
         \\);
         \\
+        \\float y = abs(123
+        \\);
+        \\
     ,
         \\vec4 x = vec4(
-        \\    1, 2,
-        \\    3, 4,
-        \\);
+        \\        1, 2,
+        \\        3, 4,
+        \\    );
+        \\
+        \\float y = abs(123);
+        \\
+    );
+}
+
+test "format loops" {
+    try expectIsFormatted(
+        \\void main() {
+        \\    for (int i = 0; i < 10; i++) print(i);
+        \\    while (true) {
+        \\        print(something);
+        \\    }
+        \\    do {
+        \\        print(something)
+        \\    } while (true);
+        \\}
+        \\
+    );
+}
+
+test "format if/else" {
+    try expectIsFormatted(
+        \\void main() {
+        \\    if (conditionA) {
+        \\        // action A
+        \\    } else if (conditionB) {
+        \\        // action B
+        \\    } else /* Condition C */ {
+        \\        // action C
+        \\    }
+        \\
+        \\    if (something)
+        \\        return;
+        \\    else
+        \\        x += 1;
+        \\}
         \\
     );
 }
