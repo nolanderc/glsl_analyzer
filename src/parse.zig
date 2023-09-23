@@ -1,14 +1,17 @@
 const std = @import("std");
 
+pub const ParseOptions = struct {
+    /// Append any ignored tokens (comments or preprocessor directives) to this list.
+    ignored: ?*std.ArrayList(Token) = null,
+    diagnostics: ?*std.ArrayList(Diagnostic) = null,
+};
+
 pub fn parse(
     allocator: std.mem.Allocator,
     source: []const u8,
-    options: struct {
-        diagnostics: ?*std.ArrayList(Diagnostic) = null,
-    },
+    options: ParseOptions,
 ) !Tree {
-    var parser = Parser.init(allocator, source);
-    parser.diagnostics = options.diagnostics;
+    var parser = Parser.init(allocator, source, options);
     defer parser.deinit();
     parser.advance();
     parseFile(&parser);
@@ -161,6 +164,9 @@ pub const Node = union(enum) {
     type_qualifier_list: Range,
     array: Range,
     array_specifier: Range,
+    struct_specifier: Range,
+
+    field_declaration_list: Range,
     field_declaration: Range,
     field: Range,
 
@@ -186,7 +192,7 @@ pub const Node = union(enum) {
 
     file: Range,
 
-    fn Payload(comptime tag: Tag) type {
+    pub fn Payload(comptime tag: Tag) type {
         return @TypeOf(@field(@as(Node, undefined), @tagName(tag)));
     }
 
@@ -243,7 +249,27 @@ pub const Tree = struct {
         self.nodes.deinit(allocator);
     }
 
-    pub fn write(tree: @This(), source: []const u8, writer: anytype) !void {
+    pub fn tag(self: @This(), index: usize) Node.Tag {
+        return self.nodes.items(.tags)[index];
+    }
+
+    pub fn rootIndex(self: @This()) u32 {
+        return @intCast(self.nodes.len - 1);
+    }
+
+    pub fn format(tree: @This(), source: []const u8) std.fmt.Formatter(formatWithSource) {
+        return .{ .data = .{
+            .tree = tree,
+            .source = source,
+        } };
+    }
+
+    const WithSource = struct {
+        tree: Tree,
+        source: []const u8,
+    };
+
+    fn formatWithSource(data: WithSource, _: anytype, _: anytype, writer: anytype) !void {
         const Formatter = struct {
             tree: Tree,
             writer: @TypeOf(writer),
@@ -282,8 +308,8 @@ pub const Tree = struct {
             }
         };
 
-        var f = Formatter{ .tree = tree, .source = source, .writer = writer };
-        try f.writeNode(tree.nodes.len - 1);
+        var f = Formatter{ .tree = data.tree, .source = data.source, .writer = writer };
+        try f.writeNode(data.tree.nodes.len - 1);
     }
 };
 
@@ -312,17 +338,18 @@ pub const Parser = struct {
     tree: Tree = .{},
     stack: std.MultiArrayList(Node) = .{},
 
-    diagnostics: ?*std.ArrayList(Diagnostic) = null,
+    options: ParseOptions,
 
     const max_fuel = 32;
 
     pub const Error = error{OutOfMemory};
 
-    pub fn init(allocator: std.mem.Allocator, source: []const u8) @This() {
+    pub fn init(allocator: std.mem.Allocator, source: []const u8, options: ParseOptions) @This() {
         return .{
             .allocator = allocator,
             .tokenizer = Tokenizer{ .source = source },
             .next = .{ .eof = .{ .start = 0, .end = 0 } },
+            .options = options,
         };
     }
 
@@ -356,10 +383,18 @@ pub const Parser = struct {
 
         while (true) {
             const token = self.tokenizer.next();
-            if (token == .comment or token == .preprocessor) continue;
-            self.next = token;
-            self.fuel = max_fuel;
-            return;
+            switch (token) {
+                .comment, .preprocessor => {
+                    if (self.options.ignored) |ignored| {
+                        self.deferError(ignored.append(token.getToken().?));
+                    }
+                },
+                else => {
+                    self.next = token;
+                    self.fuel = max_fuel;
+                    return;
+                },
+            }
         }
     }
 
@@ -394,7 +429,7 @@ pub const Parser = struct {
     }
 
     fn emitDiagnostic(self: *@This(), diagnostic: Diagnostic) void {
-        if (self.diagnostics) |diagnostics| {
+        if (self.options.diagnostics) |diagnostics| {
             self.deferError(diagnostics.append(diagnostic));
         }
     }
@@ -489,15 +524,16 @@ fn externalDeclaration(p: *Parser) void {
     }
 
     typeQualifier(p);
-    if (p.at(.identifier)) typeSpecifier(p);
+    if (p.atAny(type_specifier_first)) typeSpecifier(p);
 
+    const m_field_list = p.open();
     if (p.eat(.@"{")) {
         while (p.atAny(struct_field_declaration_first)) {
             structFieldDeclaration(p);
         }
         p.expect(.@"}");
-        const m_var = p.open();
-        if (p.eat(.identifier)) arraySpecifier(p, m_var);
+        p.close(m_field_list, .field_declaration_list);
+        if (p.at(.identifier)) variableDeclaration(p);
         p.expect(.@";");
         return p.close(m, .block_declaration);
     }
@@ -513,7 +549,7 @@ fn externalDeclaration(p: *Parser) void {
     var first = true;
     while (!p.eof() and !p.at(.@";")) : (first = false) {
         const m_var = p.open();
-        p.expect(.identifier);
+        if (!p.eat(.identifier)) break;
 
         if (first) {
             const m_params = p.open();
@@ -539,10 +575,7 @@ fn externalDeclaration(p: *Parser) void {
             }
         }
 
-        if (p.at(.@"[")) arraySpecifier(p, m_var);
-        if (p.eat(.@"=")) initializer(p);
-        if (!p.at(.@";")) p.expect(.@",");
-        p.close(m_var, .variable_declaration);
+        variableDeclarationSuffix(p, m_var);
     }
     p.expect(.@";");
     return p.close(m, .declaration);
@@ -684,13 +717,8 @@ fn statement(p: *Parser) void {
             }
 
             while (p.at(.identifier)) {
+                variableDeclaration(p);
                 is_decl = true;
-                const m_var = p.open();
-                p.advance();
-                if (p.at(.@"[")) arraySpecifier(p, m_var);
-                if (p.eat(.@"=")) initializer(p);
-                if (!p.at(.@";")) p.expect(.@",");
-                p.close(m_var, .variable_declaration);
             }
 
             p.expect(.@";");
@@ -700,6 +728,19 @@ fn statement(p: *Parser) void {
     }
 
     p.close(m, .statement);
+}
+
+fn variableDeclaration(p: *Parser) void {
+    const m_var = p.open();
+    p.expect(.identifier);
+    variableDeclarationSuffix(p, m_var);
+}
+
+fn variableDeclarationSuffix(p: *Parser, m_var: Parser.Mark) void {
+    if (p.at(.@"[")) arraySpecifier(p, m_var);
+    if (p.eat(.@"=")) initializer(p);
+    if (!p.at(.@";")) p.expect(.@",");
+    p.close(m_var, .variable_declaration);
 }
 
 const expression_first = primary_expression_first.unionWith(unary_operators);
@@ -723,7 +764,7 @@ fn expressionOpt(p: *Parser) bool {
     return true;
 }
 
-const assignment_operator = TokenSet.initMany(&.{
+pub const assignment_operators = TokenSet.initMany(&.{
     .@"=",
     .@"+=",
     .@"-=",
@@ -744,7 +785,7 @@ fn assignmentExpression(p: *Parser) void {
 fn assignmentExpressionOpt(p: *Parser) bool {
     const m = p.open();
     if (!constantExpressionOpt(p)) return false;
-    while (p.atAny(assignment_operator)) {
+    while (p.atAny(assignment_operators)) {
         p.advance();
         assignmentExpression(p);
         p.close(m, .assignment);
@@ -783,19 +824,19 @@ const infix_operator_precedence = .{
 };
 
 const precedence_level_map = blk: {
-    var map = std.EnumMap(Node.Tag, u8){};
+    var map = std.EnumArray(Node.Tag, u8).initFill(255);
     for (infix_operator_precedence, 0..) |level, index| {
         for (level) |op| {
-            map.put(op, index);
+            map.set(op, @truncate(index));
         }
     }
     break :blk map;
 };
 
 fn leftBindsStronger(lhs: Node.Tag, rhs: Node.Tag) bool {
-    const lhs_level = precedence_level_map.get(lhs) orelse return true;
-    const rhs_level = precedence_level_map.get(rhs) orelse return false;
-    return lhs_level < rhs_level;
+    const lhs_level = precedence_level_map.get(lhs);
+    const rhs_level = precedence_level_map.get(rhs);
+    return lhs_level <= rhs_level;
 }
 
 fn infixExpressionOpt(p: *Parser) bool {
@@ -918,13 +959,7 @@ fn primaryExpressionOpt(p: *Parser) bool {
             return true;
         },
         .keyword_struct => {
-            p.advance();
-            _ = p.eat(.identifier);
-            p.expect(.@"{");
-            while (p.atAny(struct_field_declaration_first)) {
-                structFieldDeclaration(p);
-            }
-            p.expect(.@"}");
+            structSpecifier(p);
             return true;
         },
         else => return false,
@@ -950,12 +985,29 @@ fn structFieldDeclaration(p: *Parser) void {
     p.close(m, .field_declaration);
 }
 
-const type_specifier_first = TokenSet.initMany(&.{.identifier});
+const type_specifier_first = TokenSet.initMany(&.{ .identifier, .keyword_struct });
 
 fn typeSpecifier(p: *Parser) void {
+    if (p.at(.keyword_struct)) return structSpecifier(p);
+
     const m = p.open();
     p.expect(.identifier);
     if (p.at(.@"[")) arraySpecifier(p, m);
+}
+
+fn structSpecifier(p: *Parser) void {
+    const m = p.open();
+    p.advance();
+    _ = p.eat(.identifier);
+
+    const m_field_list = p.open();
+    p.expect(.@"{");
+    while (p.atAny(struct_field_declaration_first)) {
+        structFieldDeclaration(p);
+    }
+    p.expect(.@"}");
+    p.close(m_field_list, .field_declaration_list);
+    p.close(m, .struct_specifier);
 }
 
 fn arraySpecifier(p: *Parser, m: Parser.Mark) void {
@@ -1035,8 +1087,12 @@ fn typeQualifierSingle(p: *Parser) void {
             while (true) {
                 switch (p.peek()) {
                     .identifier => {
+                        const m_attr = p.open();
                         p.advance();
-                        if (p.eat(.@"=")) constantExpression(p);
+                        if (p.eat(.@"=")) {
+                            constantExpression(p);
+                            p.close(m_attr, .assignment);
+                        }
                     },
                     .keyword_shared => p.advance(),
                     else => break,
@@ -1424,15 +1480,6 @@ test "parse and write" {
     const source =
         \\#version 330 core
         \\layout (location = 0) in vec3 aPos; // the position variable
-        \\  
-        \\out vec4 vertexColor; // specify a color output to the fragment shader
-        \\
-        \\void main()
-        \\{
-        \\    gl_Position = vec4(aPos, 1.0); // vec4 from vec3
-        \\    vertexColor = vec4(0.5, 0.0, 0.0, 1.0); // set the output variable
-        \\    int[4][2] x = 123;
-        \\}
     ;
 
     var tree = try parse(std.testing.allocator, source, .{});
@@ -1441,10 +1488,54 @@ test "parse and write" {
     var buffer = std.ArrayList(u8).init(std.testing.allocator);
     defer buffer.deinit();
 
-    try tree.write(source, buffer.writer());
+    try buffer.writer().print("{}", .{tree.format(source)});
 
     try std.testing.expectEqualStrings(
         \\file
-        \\  qualifier_declaration
+        \\  declaration
+        \\    type_qualifier_list
+        \\      layout_qualifier
+        \\        keyword_layout 'layout'
+        \\        (
+        \\        assignment
+        \\          identifier 'location'
+        \\          =
+        \\          number '0'
+        \\        )
+        \\      keyword_in 'in'
+        \\    identifier 'vec3'
+        \\    variable_declaration
+        \\      identifier 'aPos'
+        \\    ;
+        \\
+    , buffer.items);
+}
+
+test "parse infix op" {
+    const source =
+        \\ int x = 1 + 2;
+    ;
+
+    var tree = try parse(std.testing.allocator, source, .{});
+    defer tree.deinit(std.testing.allocator);
+
+    var buffer = std.ArrayList(u8).init(std.testing.allocator);
+    defer buffer.deinit();
+
+    try buffer.writer().print("{}", .{tree.format(source)});
+
+    try std.testing.expectEqualStrings(
+        \\file
+        \\  declaration
+        \\    identifier 'int'
+        \\    variable_declaration
+        \\      identifier 'x'
+        \\      =
+        \\      infix
+        \\        number '1'
+        \\        +
+        \\        number '2'
+        \\    ;
+        \\
     , buffer.items);
 }

@@ -30,7 +30,7 @@ fn enableDevelopmentMode() !void {
 }
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.GeneralPurposeAllocator(.{ .stack_trace_frames = 8 }){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
     var static_arena = std.heap.ArenaAllocator.init(allocator);
@@ -84,6 +84,8 @@ pub fn main() !void {
     const max_content_length = 4 << 20; // 4MB
 
     outer: while (true) {
+        defer _ = parse_arena.reset(.retain_capacity);
+
         // read headers
         const headers = blk: {
             header_stream.reset();
@@ -105,8 +107,6 @@ pub fn main() !void {
             if (actual_length < headers.content_length) return error.UnexpectedEof;
             break :blk content_buffer.items;
         };
-
-        defer _ = parse_arena.reset(.retain_capacity);
 
         // parse message(s)
         var message = blk: {
@@ -328,6 +328,7 @@ pub const Dispatch = struct {
         "textDocument/didChange",
         "textDocument/completion",
         "textDocument/hover",
+        "textDocument/formatting",
     };
 
     fn parseParams(comptime T: type, state: *State, request: *Request) !std.json.Parsed(T) {
@@ -378,6 +379,7 @@ pub const Dispatch = struct {
                     .save = .{ .includeText = false },
                 },
                 .hoverProvider = true,
+                .documentFormattingProvider = true,
             },
             .serverInfo = .{ .name = "glsl_analyzer" },
         });
@@ -517,6 +519,40 @@ pub const Dispatch = struct {
 
         try state.success(request.id, .{
             .contents = contents,
+        });
+    }
+
+    const FormattingParams = struct {
+        textDocument: lsp.TextDocumentIdentifier,
+        options: struct {
+            tabSize: u32 = 4,
+            insertSpaces: bool = true,
+        },
+    };
+
+    pub fn @"textDocument/formatting"(state: *State, request: *Request) !void {
+        const params = try parseParams(FormattingParams, state, request);
+        defer params.deinit();
+        std.log.debug("format: {s}", .{params.value.textDocument.uri});
+
+        const document = try state.workspace.getOrLoadDocument(params.value.textDocument);
+        const tree = try document.parseTree();
+
+        var buffer = std.ArrayList(u8).init(state.allocator);
+        defer buffer.deinit();
+
+        try @import("format.zig").format(
+            tree.raw,
+            document.contents.items,
+            buffer.writer(),
+            .{ .ignored = tree.ignored.items },
+        );
+
+        try state.success(request.id, .{
+            .{
+                .range = document.wholeRange(),
+                .newText = buffer.items,
+            },
         });
     }
 };

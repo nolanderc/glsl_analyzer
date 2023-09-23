@@ -1,6 +1,8 @@
 const std = @import("std");
 const lsp = @import("lsp.zig");
 const Spec = @import("Spec.zig");
+const parse = @import("parse.zig");
+pub const Document = @import("Document.zig");
 
 const Workspace = @This();
 
@@ -32,6 +34,7 @@ pub fn deinit(self: *Workspace) void {
         self.allocator.free(entry.key_ptr.*);
     }
     self.documents.deinit(self.allocator);
+    self.arena_state.promote(self.allocator).deinit();
 }
 
 pub fn getDocument(self: *Workspace, document: lsp.TextDocumentIdentifier) ?*Document {
@@ -78,74 +81,6 @@ fn uriPath(uri: []const u8) ![]const u8 {
     const scheme = "file://";
     if (!std.mem.startsWith(u8, uri, scheme)) return error.UnknownUrlScheme;
     return uri[scheme.len..];
-}
-
-pub const Document = struct {
-    allocator: std.mem.Allocator,
-
-    version: ?i64,
-
-    /// The raw bytes of the file (utf-8)
-    contents: std.ArrayListUnmanaged(u8) = .{},
-
-    pub fn deinit(self: *@This()) void {
-        self.contents.deinit(self.allocator);
-    }
-
-    pub fn replaceAll(self: *@This(), text: []const u8) !void {
-        self.contents.shrinkRetainingCapacity(0);
-        try self.contents.appendSlice(self.allocator, text);
-    }
-
-    pub fn replace(self: *@This(), range: lsp.Range, text: []const u8) !void {
-        const start = self.utf8FromPosition(range.start);
-        const end = self.utf8FromPosition(range.end);
-        const range_len = end - start;
-        try self.contents.replaceRange(self.allocator, start, range_len, text);
-    }
-
-    pub fn utf8FromPosition(self: @This(), position: lsp.Position) u32 {
-        var remaining_lines = position.line;
-        var i: usize = 0;
-        const bytes = self.contents.items;
-
-        while (remaining_lines != 0 and i < bytes.len) {
-            remaining_lines -= @intFromBool(bytes[i] == '\n');
-            i += 1;
-        }
-
-        const rest = self.contents.items[i..];
-
-        var remaining_chars = position.character;
-        var codepoints = std.unicode.Utf8View.initUnchecked(rest).iterator();
-        while (remaining_chars != 0) {
-            const codepoint = codepoints.nextCodepoint() orelse break;
-            remaining_chars -|= std.unicode.utf16CodepointSequenceLength(codepoint) catch unreachable;
-        }
-
-        return @intCast(i + codepoints.i);
-    }
-
-    fn getByte(self: @This(), index: usize) u8 {
-        return self.contents.items[index];
-    }
-
-    pub fn wordUnderCursor(self: *@This(), cursor: lsp.Position) []const u8 {
-        const offset = self.utf8FromPosition(cursor);
-
-        var start = offset;
-        var end = offset;
-
-        const bytes = self.contents.items;
-        while (start > 0 and isIdentifierChar(bytes[start - 1])) start -= 1;
-        while (end < bytes.len and isIdentifierChar(bytes[end])) end += 1;
-
-        return bytes[start..end];
-    }
-};
-
-fn isIdentifierChar(c: u8) bool {
-    return std.ascii.isAlphanumeric(c) or c == '_';
 }
 
 fn builtinCompletions(arena: std.mem.Allocator, spec: *const Spec) ![]lsp.CompletionItem {
