@@ -16,7 +16,7 @@ build:
     zig build --summary none {{flags}}
 
 test:
-    zig build test --summary all {{flags}}
+    zig build test --summary failures {{flags}}
 
 test-file path:
     zig test {{flags}} '{{path}}'

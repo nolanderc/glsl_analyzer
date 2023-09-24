@@ -158,16 +158,18 @@ fn formatNode(tree: parse.Tree, current: usize, writer: anytype) !void {
     defer writer.indentation = old_indentation;
     defer writer.line_breaks = .{};
 
-    switch (tree.nodes.get(current)) {
-        .file => |children| {
+    switch (tree.tag(current)) {
+        .file => {
+            const children = tree.children(current);
             writer.line_breaks.max = 1;
             for (children.start..children.end) |child| {
                 try formatNode(tree, child, writer);
             }
-            try writer.emitLeadingWhitespace(writer.source.len, .{ .min = 1 });
+            try writer.emitLeadingWhitespace(writer.source.len, .{ .min = 1, .max = 1 });
         },
 
-        .block, .field_declaration_list => |children| {
+        .block, .field_declaration_list => {
+            const children = tree.children(current);
             var inside_block = false;
             var has_children = false;
 
@@ -175,7 +177,7 @@ fn formatNode(tree: parse.Tree, current: usize, writer: anytype) !void {
                 const tag = tree.tag(child);
 
                 if (tag == .@"}") {
-                    const token = tree.nodes.get(child).@"}";
+                    const token = tree.token(child);
                     try writer.emitLeadingTokens(token.start);
 
                     writer.dedent();
@@ -205,27 +207,29 @@ fn formatNode(tree: parse.Tree, current: usize, writer: anytype) !void {
         },
 
         // emit without spaces between childern
-        .layout_qualifier, .prefix, .postfix => |children| {
+        .layout_qualifier, .prefix, .postfix => {
+            const children = tree.children(current);
             for (children.start..children.end) |child| {
                 try formatNode(tree, child, writer);
             }
         },
 
-        .parameter_list, .call, .condition_list => |children| {
+        .parameter_list, .call, .condition_list => {
+            const children = tree.children(current);
             const start_line = writer.current_line;
 
             for (children.start..children.end) |child| {
-                switch (tree.nodes.get(child)) {
-                    .@"(" => |token| {
-                        try writer.emitNoLeadingWhitespace(token);
+                switch (tree.tag(child)) {
+                    .@"(" => {
+                        try writer.emitNoLeadingWhitespace(tree.token(child));
                         writer.indent();
                     },
-                    .@")" => |token| {
+                    .@")" => {
                         writer.dedent();
                         if (writer.current_line == start_line) {
-                            try writer.emitNoLeadingWhitespace(token);
+                            try writer.emitNoLeadingWhitespace(tree.token(child));
                         } else {
-                            try writer.emit(token);
+                            try writer.emit(tree.token(child));
                         }
                     },
                     else => try formatNode(tree, child, writer),
@@ -236,12 +240,14 @@ fn formatNode(tree: parse.Tree, current: usize, writer: anytype) !void {
         .@";",
         .@":",
         .@",",
-        => |token| {
+        => {
+            const token = tree.token(current);
             try writer.emitNoLeadingWhitespace(token);
             writer.writeSpace();
         },
 
-        .if_branch, .else_branch => |children| {
+        .if_branch, .else_branch => {
+            const children = tree.children(current);
             for (children.start..children.end) |child| {
                 const tag = tree.tag(child);
                 if (child != children.start) writer.writeSpace();
@@ -256,7 +262,8 @@ fn formatNode(tree: parse.Tree, current: usize, writer: anytype) !void {
             }
         },
 
-        .statement => |children| {
+        .statement => {
+            const children = tree.children(current);
             for (children.start..children.end) |child| {
                 const child_tag = tree.tag(child);
                 if (child != children.start and needsLeadingSpace(child_tag)) writer.writeSpace();
@@ -294,18 +301,19 @@ fn formatNode(tree: parse.Tree, current: usize, writer: anytype) !void {
         },
 
         // emit tokens separated by spaces
-        inline else => |payload| {
+        inline else => |tag| {
             const operators = comptime parse.assignment_operators.unionWith(parse.infix_operators);
 
-            if (@TypeOf(payload) == parse.Token) {
-                try writer.emit(payload);
+            if (comptime tag.isToken()) {
+                try writer.emit(tree.token(current));
             } else {
-                for (payload.start..payload.end) |child| {
-                    const tag = tree.tag(child);
-                    if (child != payload.start and needsLeadingSpace(tag))
+                const children = tree.children(current);
+                for (children.start..children.end) |child| {
+                    const child_tag = tree.tag(child);
+                    if (child != children.start and needsLeadingSpace(child_tag))
                         writer.writeSpace();
 
-                    if (operators.contains(tag)) {
+                    if (operators.contains(child_tag)) {
                         writer.line_breaks.min = @max(0, writer.line_breaks.min);
                         writer.line_breaks.max = 1;
                         writer.indentation = old_indentation + 1;
@@ -313,7 +321,7 @@ fn formatNode(tree: parse.Tree, current: usize, writer: anytype) !void {
 
                     try formatNode(tree, child, writer);
 
-                    if (operators.contains(tag)) {
+                    if (operators.contains(child_tag)) {
                         writer.line_breaks = .{ .min = 0, .max = 1 };
                     }
                 }
@@ -322,7 +330,7 @@ fn formatNode(tree: parse.Tree, current: usize, writer: anytype) !void {
     }
 }
 
-fn needsLeadingSpace(tag: parse.Node.Tag) bool {
+fn needsLeadingSpace(tag: parse.Tag) bool {
     return switch (tag) {
         .@":",
         .@";",
@@ -539,10 +547,10 @@ fn expectFormat(source: []const u8, expected: []const u8) !void {
     try format(tree, source, buffer.writer(), .{ .ignored = ignored.items });
 
     std.testing.expectEqualStrings(expected, buffer.items) catch |err| {
-        std.debug.print("========= tree ==========\n{}", .{tree.format(source)});
+        std.debug.print("\n========= parse tree ==========\n{}", .{tree.format(source)});
 
         if (diagnostics.items.len > 0) {
-            std.debug.print("========= diagnostics ==========\n", .{});
+            std.debug.print("\n========= diagnostics ==========\n", .{});
             for (diagnostics.items) |diagnostic| {
                 std.debug.print("{}:{}: {s}\n", .{
                     diagnostic.span.start,
@@ -554,4 +562,8 @@ fn expectFormat(source: []const u8, expected: []const u8) !void {
 
         return err;
     };
+}
+
+test {
+    std.testing.refAllDeclsRecursive(@This());
 }

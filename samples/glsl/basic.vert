@@ -5,7 +5,9 @@
 int main() {
     const vec4 color = vec4(0.3, 0.5 + 3, -3, 1);
 
-    for (int i = 0; i < len; i++) print(i);
+    for (int i = 0; i < len; i++) {
+        print(i);
+    }
 
     if (true) {
         return 123;

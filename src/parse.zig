@@ -18,230 +18,203 @@ pub fn parse(
     return parser.finish();
 }
 
-pub const Node = union(enum) {
-    pub const Tag = std.meta.Tag(Node);
+pub const Tag = enum(u8) {
+    eof = 0,
 
-    pub const Range = struct {
-        start: u32,
-        end: u32,
-    };
+    unknown,
 
-    eof: Token,
-
-    unknown: Token,
-
-    comment: Token,
+    comment,
 
     // a preprocessor directive: includes everyting from the leading `#` until
     // the next line ending. May contain comments and line continuations (`\\\n`).
-    preprocessor: Token,
+    preprocessor,
 
-    identifier: Token,
-    number: Token,
-    string: Token,
+    identifier,
+    number,
+    string,
 
-    keyword_const: Token,
-    keyword_uniform: Token,
-    keyword_buffer: Token,
-    keyword_shared: Token,
-    keyword_attribute: Token,
-    keyword_varying: Token,
+    keyword_const,
+    keyword_uniform,
+    keyword_buffer,
+    keyword_shared,
+    keyword_attribute,
+    keyword_varying,
 
-    keyword_coherent: Token,
-    keyword_volatile: Token,
-    keyword_restrict: Token,
-    keyword_readonly: Token,
-    keyword_writeonly: Token,
+    keyword_coherent,
+    keyword_volatile,
+    keyword_restrict,
+    keyword_readonly,
+    keyword_writeonly,
 
-    keyword_layout: Token,
-    keyword_centroid: Token,
-    keyword_flat: Token,
-    keyword_smooth: Token,
-    keyword_noperspective: Token,
+    keyword_layout,
+    keyword_centroid,
+    keyword_flat,
+    keyword_smooth,
+    keyword_noperspective,
 
-    keyword_patch: Token,
-    keyword_sample: Token,
+    keyword_patch,
+    keyword_sample,
 
-    keyword_invariant: Token,
-    keyword_precise: Token,
+    keyword_invariant,
+    keyword_precise,
 
-    keyword_break: Token,
-    keyword_continue: Token,
-    keyword_do: Token,
-    keyword_for: Token,
-    keyword_while: Token,
-    keyword_switch: Token,
-    keyword_case: Token,
-    keyword_default: Token,
-    keyword_if: Token,
-    keyword_else: Token,
+    keyword_break,
+    keyword_continue,
+    keyword_do,
+    keyword_for,
+    keyword_while,
+    keyword_switch,
+    keyword_case,
+    keyword_default,
+    keyword_if,
+    keyword_else,
 
-    keyword_subroutine: Token,
+    keyword_subroutine,
 
-    keyword_in: Token,
-    keyword_out: Token,
-    keyword_inout: Token,
+    keyword_in,
+    keyword_out,
+    keyword_inout,
 
-    keyword_discard: Token,
-    keyword_return: Token,
+    keyword_discard,
+    keyword_return,
 
-    keyword_true: Token,
-    keyword_false: Token,
+    keyword_true,
+    keyword_false,
 
-    keyword_lowp: Token,
-    keyword_mediump: Token,
-    keyword_highp: Token,
-    keyword_precision: Token,
+    keyword_lowp,
+    keyword_mediump,
+    keyword_highp,
+    keyword_precision,
 
-    keyword_struct: Token,
+    keyword_struct,
 
-    @"(": Token,
-    @")": Token,
-    @"[": Token,
-    @"]": Token,
-    @"{": Token,
-    @"}": Token,
+    @"(",
+    @")",
+    @"[",
+    @"]",
+    @"{",
+    @"}",
 
-    @".": Token,
-    @",": Token,
-    @":": Token,
-    @";": Token,
+    @".",
+    @",",
+    @":",
+    @";",
 
-    @"?": Token,
+    @"?",
 
-    @"~": Token,
-    @"!": Token,
+    @"~",
+    @"!",
 
-    @"+": Token,
-    @"-": Token,
-    @"*": Token,
-    @"/": Token,
-    @"%": Token,
-    @"&": Token,
-    @"|": Token,
-    @"^": Token,
-    @"<<": Token,
-    @">>": Token,
+    @"+",
+    @"-",
+    @"*",
+    @"/",
+    @"%",
+    @"&",
+    @"|",
+    @"^",
+    @"<<",
+    @">>",
 
-    @"==": Token,
-    @"!=": Token,
-    @"<": Token,
-    @"<=": Token,
-    @">": Token,
-    @">=": Token,
+    @"==",
+    @"!=",
+    @"<",
+    @"<=",
+    @">",
+    @">=",
 
-    @"=": Token,
-    @"+=": Token,
-    @"-=": Token,
-    @"*=": Token,
-    @"/=": Token,
-    @"%=": Token,
-    @"&=": Token,
-    @"|=": Token,
-    @"^=": Token,
-    @"<<=": Token,
-    @">>=": Token,
+    @"=",
+    @"+=",
+    @"-=",
+    @"*=",
+    @"/=",
+    @"%=",
+    @"&=",
+    @"|=",
+    @"^=",
+    @"<<=",
+    @">>=",
 
-    @"&&": Token,
-    @"||": Token,
-    @"^^": Token,
+    @"&&",
+    @"||",
+    @"^^",
 
-    @"++": Token,
-    @"--": Token,
+    @"++",
+    @"--",
 
-    invalid: Range,
-    parenthized: Range,
-    expression_sequence: Range,
-    assignment: Range,
-    conditional: Range,
-    infix: Range,
-    prefix: Range,
-    postfix: Range,
-    call: Range,
-    argument: Range,
-    selection: Range,
+    /// KEEP THIS RIGHT AFTER THE TOKENS.
+    /// An invalid syntax tree.
+    invalid,
 
-    type_qualifier_list: Range,
-    array: Range,
-    array_specifier: Range,
-    struct_specifier: Range,
+    parenthized,
+    expression_sequence,
+    assignment,
+    conditional,
+    infix,
+    prefix,
+    postfix,
+    call,
+    argument,
+    selection,
 
-    field_declaration_list: Range,
-    field_declaration: Range,
-    field: Range,
+    type_qualifier_list,
+    array,
+    array_specifier,
+    struct_specifier,
 
-    subroutine_qualifier: Range,
-    layout_qualifier: Range,
-    precision_declaration: Range,
-    block_declaration: Range,
-    qualifier_declaration: Range,
-    variable_declaration: Range,
-    declaration: Range,
-    function_declaration: Range,
-    parameter_list: Range,
-    parameter: Range,
+    field_declaration_list,
+    field_declaration,
 
-    initializer_list: Range,
-    initializer: Range,
+    subroutine_qualifier,
+    layout_qualifier,
+    precision_declaration,
+    block_declaration,
+    qualifier_declaration,
+    variable_declaration,
+    declaration,
+    function_declaration,
+    parameter_list,
+    parameter,
 
-    block: Range,
-    statement: Range,
-    condition_list: Range,
-    if_branch: Range,
-    else_branch: Range,
+    initializer_list,
+    initializer,
 
-    case_label: Range,
-    default_label: Range,
+    block,
+    statement,
+    condition_list,
+    if_branch,
+    else_branch,
 
-    file: Range,
+    case_label,
+    default_label,
 
-    pub fn Payload(comptime tag: Tag) type {
-        return @TypeOf(@field(@as(Node, undefined), @tagName(tag)));
+    file,
+
+    pub fn isToken(tag: @This()) bool {
+        return @intFromEnum(tag) < @intFromEnum(Tag.invalid);
     }
 
-    pub fn initToken(tag: Tag, token: Token) Node {
-        switch (tag) {
-            inline else => |constant| {
-                if (Payload(constant) == Token) {
-                    return @unionInit(Node, @tagName(constant), token);
-                } else {
-                    unreachable;
-                }
-            },
-        }
+    pub fn isSyntax(tag: @This()) bool {
+        return !tag.isToken();
     }
+};
 
-    pub fn getToken(self: @This()) ?Token {
-        switch (self) {
-            inline else => |payload| {
-                return if (@TypeOf(payload) == Token) payload else null;
-            },
-        }
-    }
-
-    pub fn getRange(self: @This()) ?Range {
-        switch (self) {
-            inline else => |payload| {
-                return if (@TypeOf(payload) == Range) payload else null;
-            },
-        }
-    }
-
-    pub const Kind = union(enum) {
+pub const Node = struct {
+    pub const Data = union {
         token: Token,
         range: Range,
     };
 
-    pub fn kind(self: @This()) Kind {
-        switch (self) {
-            inline else => |payload| {
-                switch (@TypeOf(payload)) {
-                    Token => return .{ .token = payload },
-                    Range => return .{ .range = payload },
-                    else => @compileError("invalid payload type"),
-                }
-            },
-        }
+    tag: Tag,
+    data: Data,
+    parent: u32 = undefined,
+
+    pub fn getToken(self: Node) ?Token {
+        return if (self.tag.isToken()) self.data.token else null;
+    }
+
+    pub fn getRange(self: Node) ?Range {
+        return if (self.tag.isSyntax()) self.data.range else null;
     }
 };
 
@@ -252,12 +225,50 @@ pub const Tree = struct {
         self.nodes.deinit(allocator);
     }
 
-    pub fn tag(self: @This(), index: usize) Node.Tag {
-        return self.nodes.items(.tags)[index];
+    fn assignParents(self: *@This()) void {
+        const nodes = &self.nodes;
+        for (nodes.items(.tag), nodes.items(.data), 0..) |tag_, data, index| {
+            if (!tag_.isSyntax()) continue;
+            const children_ = data.range;
+            @memset(nodes.items(.parent)[children_.start..children_.end], @intCast(index));
+        }
+    }
+
+    pub fn tag(self: @This(), index: usize) Tag {
+        return self.nodes.items(.tag)[index];
+    }
+
+    pub fn parent(self: @This(), index: usize) ?u32 {
+        if (self.tag(index) == .file) return null;
+        return self.nodes.items(.parent)[index];
+    }
+
+    pub fn token(self: @This(), index: usize) Token {
+        return self.nodes.items(.data)[index].token;
+    }
+
+    pub fn children(self: @This(), index: usize) Range {
+        return self.nodes.items(.data)[index].range;
     }
 
     pub fn rootIndex(self: @This()) u32 {
         return @intCast(self.nodes.len - 1);
+    }
+
+    pub fn nodeSpans(self: @This(), spans: []Span) void {
+        std.debug.assert(spans.len == self.nodes.len);
+
+        for (spans, 0..) |*span, index| {
+            const node = self.nodes.get(index);
+            if (node.getToken()) |tok| span.* = tok;
+            if (node.getRange()) |range| {
+                std.debug.assert(range.end < index);
+                span.* = .{
+                    .start = spans[range.start].start,
+                    .end = spans[range.end].end,
+                };
+            }
+        }
     }
 
     pub fn format(tree: @This(), source: []const u8) std.fmt.Formatter(formatWithSource) {
@@ -283,30 +294,29 @@ pub const Tree = struct {
                 const indent = self.indent;
 
                 const node = self.tree.nodes.get(index);
-                const name = @tagName(node);
+                const name = @tagName(node.tag);
 
-                switch (node.kind()) {
-                    .token => |token| {
-                        const text = self.source[token.start..token.end];
-                        try self.writer.writeByteNTimes(' ', indent);
+                if (node.getToken()) |tok| {
+                    const text = self.source[tok.start..tok.end];
+                    try self.writer.writeByteNTimes(' ', indent);
 
-                        if (std.ascii.isAlphabetic(name[0])) {
-                            try self.writer.print("{s} '{'}'\n", .{
-                                name, std.zig.fmtEscapes(text),
-                            });
-                        } else {
-                            try self.writer.print("{s}\n", .{name});
-                        }
-                    },
-                    .range => |range| {
-                        defer self.indent = indent;
-                        try self.writer.writeByteNTimes(' ', indent);
+                    if (std.ascii.isAlphabetic(name[0])) {
+                        try self.writer.print("{s} '{'}'\n", .{
+                            name, std.zig.fmtEscapes(text),
+                        });
+                    } else {
                         try self.writer.print("{s}\n", .{name});
-                        self.indent += 2;
-                        for (range.start..range.end) |child| {
-                            try self.writeNode(child);
-                        }
-                    },
+                    }
+                }
+
+                if (node.getRange()) |range| {
+                    defer self.indent = indent;
+                    try self.writer.writeByteNTimes(' ', indent);
+                    try self.writer.print("{s}\n", .{name});
+                    self.indent += 2;
+                    for (range.start..range.end) |child| {
+                        try self.writeNode(child);
+                    }
                 }
             }
         };
@@ -316,12 +326,17 @@ pub const Tree = struct {
     }
 };
 
+pub const Range = struct {
+    start: u32,
+    end: u32,
+};
+
 pub const Token = struct {
     start: u32,
     end: u32,
 };
 
-const TokenSet = std.EnumSet(Node.Tag);
+const TokenSet = std.EnumSet(Tag);
 
 pub const Span = Token;
 
@@ -351,7 +366,7 @@ pub const Parser = struct {
         return .{
             .allocator = allocator,
             .tokenizer = Tokenizer{ .source = source },
-            .next = .{ .eof = .{ .start = 0, .end = 0 } },
+            .next = .{ .tag = .eof, .data = .{ .token = .{ .start = 0, .end = 0 } } },
             .options = options,
         };
     }
@@ -365,6 +380,8 @@ pub const Parser = struct {
         if (self.deferred_error) |err| return err;
 
         try self.tree.nodes.append(self.allocator, self.stack.pop());
+
+        self.tree.assignParents();
 
         const tree = self.tree;
         self.tree = .{};
@@ -386,7 +403,7 @@ pub const Parser = struct {
 
         while (true) {
             const token = self.tokenizer.next();
-            switch (token) {
+            switch (token.tag) {
                 .comment, .preprocessor => {
                     if (self.options.ignored) |ignored| {
                         self.deferError(ignored.append(token.getToken().?));
@@ -401,13 +418,13 @@ pub const Parser = struct {
         }
     }
 
-    fn peek(self: *@This()) Node.Tag {
+    fn peek(self: *@This()) Tag {
         self.fuel -= 1;
         if (self.fuel == 0) std.debug.panic("ran out of fuel", .{});
-        return self.next;
+        return self.next.tag;
     }
 
-    fn at(self: *@This(), expected: Node.Tag) bool {
+    fn at(self: *@This(), expected: Tag) bool {
         return self.peek() == expected;
     }
 
@@ -419,13 +436,13 @@ pub const Parser = struct {
         return self.at(.eof);
     }
 
-    fn eat(self: *@This(), expected: Node.Tag) bool {
+    fn eat(self: *@This(), expected: Tag) bool {
         const found = self.at(expected);
         if (found) self.advance();
         return found;
     }
 
-    fn expect(self: *@This(), comptime expected: Node.Tag) void {
+    fn expect(self: *@This(), comptime expected: Tag) void {
         if (!self.eat(expected)) {
             self.emitError("expected " ++ @tagName(expected));
         }
@@ -467,8 +484,8 @@ pub const Parser = struct {
         return .{ .index = self.stack.len };
     }
 
-    fn closeRange(self: *@This(), mark: Mark) Node.Range {
-        const tags = self.stack.items(.tags)[mark.index..];
+    fn closeRange(self: *@This(), mark: Mark) Range {
+        const tags = self.stack.items(.tag)[mark.index..];
         const data = self.stack.items(.data)[mark.index..];
 
         const start = self.tree.nodes.len;
@@ -476,20 +493,24 @@ pub const Parser = struct {
 
         self.deferError(self.tree.nodes.ensureUnusedCapacity(self.allocator, tags.len));
         self.tree.nodes.len = end;
-        @memcpy(self.tree.nodes.items(.tags)[start..], tags);
+        @memcpy(self.tree.nodes.items(.tag)[start..], tags);
         @memcpy(self.tree.nodes.items(.data)[start..], data);
 
         self.stack.len = mark.index;
 
-        return Node.Range{
+        return Range{
             .start = @intCast(start),
             .end = @intCast(end),
         };
     }
 
-    fn close(self: *@This(), mark: Mark, comptime kind: Node.Tag) void {
+    fn close(self: *@This(), mark: Mark, comptime tag: Tag) void {
+        comptime std.debug.assert(tag.isSyntax());
         const range = self.closeRange(mark);
-        self.deferError(self.stack.append(self.allocator, @unionInit(Node, @tagName(kind), range)));
+        self.deferError(self.stack.append(self.allocator, .{
+            .tag = tag,
+            .data = .{ .range = range },
+        }));
     }
 };
 
@@ -608,12 +629,11 @@ fn parameter(p: *Parser) void {
     typeSpecifier(p);
     const m_name = p.open();
     if (p.eat(.identifier)) {
-        if (p.at(.@"[")) {
-            arraySpecifier(p, m_name);
-        }
+        if (p.at(.@"[")) arraySpecifier(p, m_name);
     }
-
+    p.close(m_name, .variable_declaration);
     if (!p.at(.@")")) p.expect(.@",");
+
     p.close(m, .parameter);
 }
 
@@ -863,7 +883,7 @@ const infix_operator_precedence = .{
 };
 
 const precedence_level_map = blk: {
-    var map = std.EnumArray(Node.Tag, u8).initFill(255);
+    var map = std.EnumArray(Tag, u8).initFill(255);
     for (infix_operator_precedence, 0..) |level, index| {
         for (level) |op| {
             map.set(op, @truncate(index));
@@ -878,7 +898,7 @@ pub const infix_operators = blk: {
     break :blk set;
 };
 
-fn leftBindsStronger(lhs: Node.Tag, rhs: Node.Tag) bool {
+fn leftBindsStronger(lhs: Tag, rhs: Tag) bool {
     const lhs_level = precedence_level_map.get(lhs);
     const rhs_level = precedence_level_map.get(rhs);
     return lhs_level <= rhs_level;
@@ -888,7 +908,7 @@ fn infixExpressionOpt(p: *Parser) bool {
     return infixExpressionOptImpl(p, .eof);
 }
 
-fn infixExpressionOptImpl(p: *Parser, lhs: Node.Tag) bool {
+fn infixExpressionOptImpl(p: *Parser, lhs: Tag) bool {
     const m = p.open();
     if (!unaryExpressionOpt(p)) return false;
 
@@ -1023,13 +1043,7 @@ fn structFieldDeclaration(p: *Parser) void {
     const m = p.open();
     typeQualifier(p);
     typeSpecifier(p);
-    while (true) {
-        const m_field = p.open();
-        if (!p.eat(.identifier)) break;
-        if (p.at(.@"[")) arraySpecifier(p, m_field);
-        if (!p.at(.@";")) p.expect(.@",");
-        p.close(m_field, .field);
-    }
+    while (p.at(.identifier)) variableDeclaration(p);
     p.expect(.@";");
     p.close(m, .field_declaration);
 }
@@ -1253,7 +1267,8 @@ pub const Tokenizer = struct {
                 i += 1;
                 while (i < N and isIdentifierChar(text[i])) i += 1;
                 const ident = self.tokenSpan(i);
-                return mapKeyword(self.source[ident.start..ident.end], ident);
+                const tag = mapKeyword(self.source[ident.start..ident.end]);
+                return .{ .tag = tag, .data = .{ .token = ident } };
             },
 
             '"' => {
@@ -1387,7 +1402,7 @@ pub const Tokenizer = struct {
                     valid_char.set('_');
                     valid_char.set('"');
                     valid_char.set('#');
-                    for (std.meta.tags(Node.Tag)) |tag| {
+                    for (std.meta.tags(Tag)) |tag| {
                         const name = @tagName(tag);
                         valid_char.set(name[0]);
                     }
@@ -1405,8 +1420,8 @@ pub const Tokenizer = struct {
         return if (index < text.len) text[index] else 0;
     }
 
-    fn token(self: *@This(), comptime kind: Node.Tag, end: u32) Node {
-        return @unionInit(Node, @tagName(kind), self.tokenSpan(end));
+    fn token(self: *@This(), comptime tag: Tag, end: u32) Node {
+        return .{ .tag = tag, .data = .{ .token = self.tokenSpan(end) } };
     }
 
     fn tokenSpan(self: *@This(), end: u32) Token {
@@ -1426,13 +1441,13 @@ pub const Tokenizer = struct {
         }
     }
 
-    fn mapKeyword(identifier: []const u8, span: Token) Node {
+    fn mapKeyword(identifier: []const u8) Tag {
         const map = comptime blk: {
             @setEvalBranchQuota(2000);
 
-            const tags = std.meta.tags(Node.Tag);
+            const tags = std.meta.tags(Tag);
 
-            var table = std.BoundedArray(struct { []const u8, Node.Tag }, tags.len){};
+            var table = std.BoundedArray(struct { []const u8, Tag }, tags.len){};
 
             for (tags) |tag| {
                 if (stripPrefix(@tagName(tag), "keyword_")) |name| {
@@ -1440,14 +1455,10 @@ pub const Tokenizer = struct {
                 }
             }
 
-            break :blk std.ComptimeStringMap(Node.Tag, table.slice());
+            break :blk std.ComptimeStringMap(Tag, table.slice());
         };
 
-        if (map.get(identifier)) |tag| {
-            return Node.initToken(tag, span);
-        } else {
-            return .{ .identifier = span };
-        }
+        return map.get(identifier) orelse .identifier;
     }
 };
 
@@ -1593,4 +1604,8 @@ test "parse infix op" {
         \\    ;
         \\
     , buffer.items);
+}
+
+test {
+    std.testing.refAllDeclsRecursive(@This());
 }

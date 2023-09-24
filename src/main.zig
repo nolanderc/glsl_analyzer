@@ -7,7 +7,7 @@ const rpc = @import("jsonrpc.zig");
 const Response = rpc.Response;
 const Request = rpc.Request;
 
-const Workspace = @import("Workspace.zig");
+pub const Workspace = @import("Workspace.zig");
 const cli = @import("cli.zig");
 
 pub const std_options = struct {
@@ -556,3 +556,12 @@ pub const Dispatch = struct {
         });
     }
 };
+
+test {
+    std.testing.refAllDecls(@This());
+    _ = @import("Workspace.zig");
+    _ = @import("Document.zig");
+    _ = @import("parse.zig");
+    _ = @import("format.zig");
+    _ = @import("analysis.zig");
+}

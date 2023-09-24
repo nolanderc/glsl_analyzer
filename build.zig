@@ -10,18 +10,7 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    exe.linkLibC();
-
-    {
-        exe.addAnonymousModule("glsl_spec.json", .{ .source_file = .{
-            .path = b.pathFromRoot("spec/spec.json"),
-        } });
-
-        const options = b.addOptions();
-        const build_root_path = try std.fs.path.resolve(b.allocator, &.{b.build_root.path orelse "."});
-        options.addOption([]const u8, "build_root", build_root_path);
-        exe.addOptions("build_options", options);
-    }
+    try attachModules(exe);
 
     b.installArtifact(exe);
     const run_cmd = b.addRunArtifact(exe);
@@ -39,9 +28,24 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
+    try attachModules(unit_tests);
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_unit_tests.step);
+}
+
+fn attachModules(step: *std.Build.CompileStep) !void {
+    const b = step.step.owner;
+
+    step.linkLibC();
+    step.addAnonymousModule("glsl_spec.json", .{ .source_file = .{
+        .path = b.pathFromRoot("spec/spec.json"),
+    } });
+
+    const options = b.addOptions();
+    const build_root_path = try std.fs.path.resolve(b.allocator, &.{b.build_root.path orelse "."});
+    options.addOption([]const u8, "build_root", build_root_path);
+    step.addOptions("build_options", options);
 }

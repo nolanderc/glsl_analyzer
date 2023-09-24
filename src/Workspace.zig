@@ -1,7 +1,7 @@
 const std = @import("std");
 const lsp = @import("lsp.zig");
 const Spec = @import("Spec.zig");
-const parse = @import("parse.zig");
+pub const parse = @import("parse.zig");
 pub const Document = @import("Document.zig");
 
 const Workspace = @This();
@@ -49,7 +49,11 @@ pub fn getOrCreateDocument(
     if (!entry.found_existing) {
         errdefer self.documents.removeByPtr(entry.key_ptr);
         entry.key_ptr.* = try self.allocator.dupe(u8, document.uri);
-        entry.value_ptr.* = .{ .allocator = self.allocator, .version = document.version };
+        entry.value_ptr.* = .{
+            .uri = entry.key_ptr.*,
+            .workspace = self,
+            .version = document.version,
+        };
     }
     return entry.value_ptr;
 }
@@ -69,7 +73,8 @@ pub fn getOrLoadDocument(
 
         entry.key_ptr.* = try self.allocator.dupe(u8, document.uri);
         entry.value_ptr.* = .{
-            .allocator = self.allocator,
+            .uri = entry.key_ptr.*,
+            .workspace = self,
             .version = null,
             .contents = std.ArrayListUnmanaged(u8).fromOwnedSlice(contents),
         };

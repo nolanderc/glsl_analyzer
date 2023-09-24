@@ -1,9 +1,11 @@
 const std = @import("std");
 const lsp = @import("lsp.zig");
 const parse = @import("parse.zig");
+const Workspace = @import("Workspace.zig");
 
-allocator: std.mem.Allocator,
+workspace: *Workspace,
 
+uri: []const u8,
 version: ?i64,
 
 /// The raw bytes of the file (utf-8)
@@ -13,19 +15,23 @@ contents: std.ArrayListUnmanaged(u8) = .{},
 parse_tree: ?CompleteParseTree = null,
 
 pub fn deinit(self: *@This()) void {
-    self.contents.deinit(self.allocator);
-    if (self.parse_tree) |*tree| tree.deinit(self.allocator);
+    self.contents.deinit(self.workspace.allocator);
+    if (self.parse_tree) |*tree| tree.deinit(self.workspace.allocator);
 }
 
 pub fn invalidate(self: *@This()) void {
-    if (self.parse_tree) |*tree| tree.deinit(self.allocator);
+    if (self.parse_tree) |*tree| tree.deinit(self.workspace.allocator);
     self.parse_tree = null;
+}
+
+pub fn source(self: *@This()) []const u8 {
+    return self.contents.items;
 }
 
 pub fn replaceAll(self: *@This(), text: []const u8) !void {
     self.invalidate();
     self.contents.shrinkRetainingCapacity(0);
-    try self.contents.appendSlice(self.allocator, text);
+    try self.contents.appendSlice(self.workspace.allocator, text);
 }
 
 pub fn replace(self: *@This(), range: lsp.Range, text: []const u8) !void {
@@ -33,7 +39,7 @@ pub fn replace(self: *@This(), range: lsp.Range, text: []const u8) !void {
     const start = self.utf8FromPosition(range.start);
     const end = self.utf8FromPosition(range.end);
     const range_len = end - start;
-    try self.contents.replaceRange(self.allocator, start, range_len, text);
+    try self.contents.replaceRange(self.workspace.allocator, start, range_len, text);
 }
 
 pub fn utf8FromPosition(self: @This(), position: lsp.Position) u32 {
@@ -101,7 +107,10 @@ fn isIdentifierChar(c: u8) bool {
 
 pub fn parseTree(self: *@This()) !*const CompleteParseTree {
     if (self.parse_tree) |*tree| return tree;
-    self.parse_tree = try CompleteParseTree.parseSource(self.allocator, self.contents.items);
+    self.parse_tree = try CompleteParseTree.parseSource(
+        self.workspace.allocator,
+        self.contents.items,
+    );
     return &self.parse_tree.?;
 }
 
@@ -116,14 +125,14 @@ pub const CompleteParseTree = struct {
         self.diagnostics.deinit(allocator);
     }
 
-    pub fn parseSource(allocator: std.mem.Allocator, source: []const u8) !@This() {
+    pub fn parseSource(allocator: std.mem.Allocator, text: []const u8) !@This() {
         var diagnostics = std.ArrayList(parse.Diagnostic).init(allocator);
         errdefer diagnostics.deinit();
 
         var ignored = std.ArrayList(parse.Token).init(allocator);
         errdefer ignored.deinit();
 
-        const tree = try parse.parse(allocator, source, .{
+        const tree = try parse.parse(allocator, text, .{
             .ignored = &ignored,
             .diagnostics = &diagnostics,
         });
