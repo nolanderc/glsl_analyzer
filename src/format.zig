@@ -497,7 +497,7 @@ test "format loops" {
         \\        print(something);
         \\    }
         \\    do {
-        \\        print(something)
+        \\        print(something);
         \\    } while (true);
         \\}
         \\
@@ -520,6 +520,13 @@ test "format if/else" {
         \\    else
         \\        x += 1;
         \\}
+        \\
+    );
+}
+
+test "format function prototype" {
+    try expectIsFormatted(
+        \\int add(int, int);
         \\
     );
 }

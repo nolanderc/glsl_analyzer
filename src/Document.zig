@@ -64,27 +64,38 @@ pub fn utf8FromPosition(self: @This(), position: lsp.Position) u32 {
     return @intCast(i + codepoints.i);
 }
 
-fn getByte(self: @This(), index: usize) u8 {
-    return self.contents.items[index];
-}
-
-pub fn wholeRange(self: @This()) lsp.Range {
+pub fn positionFromUtf8(self: @This(), offset: u32) lsp.Position {
     var line_breaks: u32 = 0;
     var line_start: usize = 0;
 
-    for (self.contents.items, 0..) |ch, index| {
+    const text = self.contents.items[0..offset];
+
+    for (text, 0..) |ch, index| {
         if (ch == '\n') {
             line_breaks += 1;
             line_start = index + 1;
         }
     }
 
-    const last_line = self.contents.items[line_start..];
+    const last_line = text[line_start..];
     const character = std.unicode.calcUtf16LeLen(last_line) catch last_line.len;
 
+    return .{ .line = line_breaks, .character = @intCast(character) };
+}
+
+pub fn wholeRange(self: @This()) lsp.Range {
     return .{
         .start = .{ .line = 0, .character = 0 },
-        .end = .{ .line = line_breaks, .character = @intCast(character) },
+        .end = self.positionFromUtf8(@intCast(self.contents.items.len)),
+    };
+}
+
+pub fn nodeRange(self: *@This(), node: u32) !lsp.Range {
+    const parsed = try self.parseTree();
+    const span = parsed.tree.nodeSpan(node);
+    return .{
+        .start = self.positionFromUtf8(span.start),
+        .end = self.positionFromUtf8(span.end),
     };
 }
 
@@ -101,6 +112,49 @@ pub fn wordUnderCursor(self: *@This(), cursor: lsp.Position) []const u8 {
     return bytes[start..end];
 }
 
+/// Return the node right under the cursor.
+pub fn nodeUnderCursor(self: *@This(), cursor: lsp.Position) !?u32 {
+    const offset = self.utf8FromPosition(cursor);
+    const parsed = try self.parseTree();
+    const tree = parsed.tree;
+
+    for (0.., tree.nodes.items(.tag), tree.nodes.items(.span)) |index, tag, span| {
+        if (tag.isToken() and span.start <= offset and offset < span.end) {
+            return @intCast(index);
+        }
+    }
+
+    return null;
+}
+
+/// Return the node closest to left of the cursor.
+pub fn nodeBeforeCursor(self: *@This(), cursor: lsp.Position) !?u32 {
+    const offset = self.utf8FromPosition(cursor);
+    const parsed = try self.parseTree();
+    const tree = parsed.tree;
+
+    var best: ?u32 = null;
+    var best_end: u32 = 0;
+
+    for (0.., tree.nodes.items(.tag), tree.nodes.items(.span)) |index, tag, span| {
+        if (tag.isToken()) {
+            // ignore empty tokens
+            if (span.start == span.end) continue;
+
+            // ignore tokens after the cursor
+            if (offset < span.start) continue;
+
+            if (span.end > best_end) {
+                // found a token further to the right
+                best = @intCast(index);
+                best_end = span.end;
+            }
+        }
+    }
+
+    return best;
+}
+
 fn isIdentifierChar(c: u8) bool {
     return std.ascii.isAlphanumeric(c) or c == '_';
 }
@@ -115,22 +169,23 @@ pub fn parseTree(self: *@This()) !*const CompleteParseTree {
 }
 
 pub const CompleteParseTree = struct {
-    raw: parse.Tree,
+    arena_state: std.heap.ArenaAllocator.State,
+    tree: parse.Tree,
     ignored: std.ArrayListUnmanaged(parse.Token),
     diagnostics: std.ArrayListUnmanaged(parse.Diagnostic),
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
-        self.raw.deinit(allocator);
-        self.ignored.deinit(allocator);
-        self.diagnostics.deinit(allocator);
+        self.arena_state.promote(allocator).deinit();
     }
 
-    pub fn parseSource(allocator: std.mem.Allocator, text: []const u8) !@This() {
-        var diagnostics = std.ArrayList(parse.Diagnostic).init(allocator);
-        errdefer diagnostics.deinit();
+    pub fn parseSource(parent_allocator: std.mem.Allocator, text: []const u8) !@This() {
+        var arena = std.heap.ArenaAllocator.init(parent_allocator);
+        errdefer arena.deinit();
 
+        const allocator = arena.allocator();
+
+        var diagnostics = std.ArrayList(parse.Diagnostic).init(allocator);
         var ignored = std.ArrayList(parse.Token).init(allocator);
-        errdefer ignored.deinit();
 
         const tree = try parse.parse(allocator, text, .{
             .ignored = &ignored,
@@ -138,7 +193,8 @@ pub const CompleteParseTree = struct {
         });
 
         return .{
-            .raw = tree,
+            .arena_state = arena.state,
+            .tree = tree,
             .ignored = ignored.moveToUnmanaged(),
             .diagnostics = diagnostics.moveToUnmanaged(),
         };

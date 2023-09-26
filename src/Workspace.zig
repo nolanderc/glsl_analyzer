@@ -1,7 +1,7 @@
 const std = @import("std");
 const lsp = @import("lsp.zig");
 const Spec = @import("Spec.zig");
-pub const parse = @import("parse.zig");
+const parse = @import("parse.zig");
 pub const Document = @import("Document.zig");
 
 const Workspace = @This();

@@ -7,11 +7,12 @@ const rpc = @import("jsonrpc.zig");
 const Response = rpc.Response;
 const Request = rpc.Request;
 
-pub const Workspace = @import("Workspace.zig");
+const Workspace = @import("Workspace.zig");
 const cli = @import("cli.zig");
+const analysis = @import("analysis.zig");
 
 pub const std_options = struct {
-    pub const log_level = .info;
+    pub const log_level = .debug;
 };
 
 const stderr_target = build_options.build_root ++ "/stderr.log";
@@ -329,6 +330,7 @@ pub const Dispatch = struct {
         "textDocument/completion",
         "textDocument/hover",
         "textDocument/formatting",
+        "textDocument/definition",
     };
 
     fn parseParams(comptime T: type, state: *State, request: *Request) !std.json.Parsed(T) {
@@ -380,6 +382,7 @@ pub const Dispatch = struct {
                 },
                 .hoverProvider = true,
                 .documentFormattingProvider = true,
+                .definitionProvider = true,
             },
             .serverInfo = .{ .name = "glsl_analyzer" },
         });
@@ -487,6 +490,74 @@ pub const Dispatch = struct {
         var completions = std.ArrayList(lsp.CompletionItem).init(state.allocator);
         defer completions.deinit();
 
+        var symbol_arena = std.heap.ArenaAllocator.init(state.allocator);
+        defer symbol_arena.deinit();
+
+        const document = try getDocumentOrFail(state, request, params.value.textDocument);
+
+        if (try document.nodeBeforeCursor(params.value.position)) |node| {
+            var symbols = std.ArrayList(analysis.Reference).init(state.allocator);
+            defer symbols.deinit();
+            try analysis.visibleSymbols(document, node, &symbols);
+
+            try completions.ensureUnusedCapacity(symbols.items.len);
+
+            for (symbols.items) |symbol| {
+                const parsed: *const Workspace.Document.CompleteParseTree = try symbol.document.parseTree();
+                const decl_node = parsed.tree.nodes.get(symbol.parent_declaration);
+
+                const child_nodes: [2]u32 = .{
+                    symbol.node,
+                    parsed.tree.parent(symbol.node) orelse symbol.node,
+                };
+
+                // get type and qualifiers
+                var signature: ?[]const u8 = for (child_nodes) |child_node| {
+                    if (decl_node.span.start < child_node and child_node <= decl_node.span.end) {
+                        const start = parsed.tree.nodeSpanExtreme(decl_node.span.start, .start);
+                        const end = parsed.tree.nodeSpanExtreme(child_node - 1, .end);
+                        break symbol.document.source()[start..end];
+                    }
+                } else null;
+
+                // append parameters
+                if (signature != null and decl_node.tag == .function_declaration) {
+                    const tags = parsed.tree.nodes.items(.tag);
+                    for (decl_node.span.start..decl_node.span.end) |child| {
+                        if (tags[child] == .parameter_list) {
+                            const param_span = parsed.tree.nodeSpan(@intCast(child));
+                            var param_text: []const u8 = symbol.document.source()[param_span.start..param_span.end];
+                            signature = try std.mem.join(symbol_arena.allocator(), " ", &.{
+                                signature.?,
+                                param_text,
+                            });
+                        }
+                    }
+                }
+
+                // join all lines
+                if (signature) |signature_text| {
+                    if (std.mem.indexOfScalar(u8, signature_text, '\n') != null) {
+                        const tmp_text = try symbol_arena.allocator().dupe(u8, signature_text);
+                        std.mem.replaceScalar(u8, tmp_text, '\n', ' ');
+                        signature = tmp_text;
+                    }
+                }
+
+                try completions.append(.{
+                    .label = symbol.name(),
+                    .labelDetails = .{
+                        .detail = signature,
+                    },
+                    .kind = switch (decl_node.tag) {
+                        .struct_specifier => .class,
+                        .function_declaration => .function,
+                        else => .variable,
+                    },
+                });
+            }
+        }
+
         try completions.appendSlice(state.workspace.builtin_completions);
 
         try state.success(request.id, completions.items);
@@ -536,16 +607,16 @@ pub const Dispatch = struct {
         std.log.debug("format: {s}", .{params.value.textDocument.uri});
 
         const document = try state.workspace.getOrLoadDocument(params.value.textDocument);
-        const tree = try document.parseTree();
+        const parsed = try document.parseTree();
 
         var buffer = std.ArrayList(u8).init(state.allocator);
         defer buffer.deinit();
 
         try @import("format.zig").format(
-            tree.raw,
+            parsed.tree,
             document.contents.items,
             buffer.writer(),
-            .{ .ignored = tree.ignored.items },
+            .{ .ignored = parsed.ignored.items },
         );
 
         try state.success(request.id, .{
@@ -555,10 +626,40 @@ pub const Dispatch = struct {
             },
         });
     }
+
+    const DefinitionParams = struct {
+        textDocument: lsp.TextDocumentIdentifier,
+        position: lsp.Position,
+    };
+
+    pub fn @"textDocument/definition"(state: *State, request: *Request) !void {
+        const params = try parseParams(DefinitionParams, state, request);
+        defer params.deinit();
+        std.log.debug("goto definition: {} {s}", .{
+            params.value.position,
+            params.value.textDocument.uri,
+        });
+
+        const document = try state.workspace.getOrLoadDocument(params.value.textDocument);
+        const source_node = try document.nodeUnderCursor(params.value.position) orelse {
+            std.log.debug("no node under cursor", .{});
+            return state.success(request.id, null);
+        };
+
+        const reference = try analysis.findDefinition(document, source_node) orelse {
+            std.log.debug("could not find definition", .{});
+            return state.success(request.id, null);
+        };
+
+        try state.success(request.id, .{
+            .uri = reference.document.uri,
+            .range = try document.nodeRange(reference.node),
+        });
+    }
 };
 
 test {
-    std.testing.refAllDecls(@This());
+    std.testing.refAllDeclsRecursive(@This());
     _ = @import("Workspace.zig");
     _ = @import("Document.zig");
     _ = @import("parse.zig");

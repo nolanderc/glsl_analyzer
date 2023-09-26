@@ -2,7 +2,7 @@ const std = @import("std");
 
 pub const ParseOptions = struct {
     /// Append any ignored tokens (comments or preprocessor directives) to this list.
-    ignored: ?*std.ArrayList(Token) = null,
+    ignored: ?*std.ArrayList(Span) = null,
     diagnostics: ?*std.ArrayList(Diagnostic) = null,
 };
 
@@ -200,21 +200,20 @@ pub const Tag = enum(u8) {
 };
 
 pub const Node = struct {
-    pub const Data = union {
-        token: Token,
-        range: Range,
-    };
-
+    /// The type of node.
     tag: Tag,
-    data: Data,
+    /// If this is a token, the byte offset in the source file. Otherwise, the
+    /// indices of the child nodes.
+    span: Span,
+    /// The index of the parent node.
     parent: u32 = undefined,
 
-    pub fn getToken(self: Node) ?Token {
-        return if (self.tag.isToken()) self.data.token else null;
+    pub fn getToken(self: Node) ?Span {
+        return if (self.tag.isToken()) self.span else null;
     }
 
     pub fn getRange(self: Node) ?Range {
-        return if (self.tag.isSyntax()) self.data.range else null;
+        return if (self.tag.isSyntax()) self.span else null;
     }
 };
 
@@ -227,10 +226,10 @@ pub const Tree = struct {
 
     fn assignParents(self: *@This()) void {
         const nodes = &self.nodes;
-        for (nodes.items(.tag), nodes.items(.data), 0..) |tag_, data, index| {
+        for (nodes.items(.tag), nodes.items(.span), 0..) |tag_, span, index| {
             if (!tag_.isSyntax()) continue;
-            const children_ = data.range;
-            @memset(nodes.items(.parent)[children_.start..children_.end], @intCast(index));
+            std.debug.assert(span.start != span.end);
+            @memset(nodes.items(.parent)[span.start..span.end], @intCast(index));
         }
     }
 
@@ -243,12 +242,12 @@ pub const Tree = struct {
         return self.nodes.items(.parent)[index];
     }
 
-    pub fn token(self: @This(), index: usize) Token {
-        return self.nodes.items(.data)[index].token;
+    pub fn token(self: @This(), index: usize) Span {
+        return self.nodes.items(.span)[index];
     }
 
     pub fn children(self: @This(), index: usize) Range {
-        return self.nodes.items(.data)[index].range;
+        return self.nodes.items(.span)[index];
     }
 
     pub fn rootIndex(self: @This()) u32 {
@@ -271,6 +270,29 @@ pub const Tree = struct {
         }
     }
 
+    pub fn nodeSpan(self: @This(), node: u32) Span {
+        return .{
+            .start = self.nodeSpanExtreme(node, .start),
+            .end = self.nodeSpanExtreme(node, .end),
+        };
+    }
+
+    pub fn nodeSpanExtreme(
+        self: @This(),
+        node: u32,
+        comptime extreme: std.meta.FieldEnum(Span),
+    ) u32 {
+        const tags = self.nodes.items(.tag);
+        const spans = self.nodes.items(.span);
+        var current = node;
+        while (true) {
+            const span = spans[current];
+            const value = @field(span, @tagName(extreme));
+            if (tags[current].isToken()) return value;
+            current = if (extreme == .start) value else value - 1;
+        }
+    }
+
     pub fn format(tree: @This(), source: []const u8) std.fmt.Formatter(formatWithSource) {
         return .{ .data = .{
             .tree = tree,
@@ -283,7 +305,20 @@ pub const Tree = struct {
         source: []const u8,
     };
 
-    fn formatWithSource(data: WithSource, _: anytype, _: anytype, writer: anytype) !void {
+    fn formatWithSource(
+        data: WithSource,
+        comptime fmt: []const u8,
+        _: anytype,
+        writer: anytype,
+    ) !void {
+        comptime var with_spans = false;
+
+        if (comptime std.mem.eql(u8, fmt, "..")) {
+            with_spans = true;
+        } else if (fmt.len != 0) {
+            @compileError("expected `{}` or `{..}`");
+        }
+
         const Formatter = struct {
             tree: Tree,
             writer: @TypeOf(writer),
@@ -296,23 +331,28 @@ pub const Tree = struct {
                 const node = self.tree.nodes.get(index);
                 const name = @tagName(node.tag);
 
+                try self.writer.writeByteNTimes(' ', indent);
+
                 if (node.getToken()) |tok| {
                     const text = self.source[tok.start..tok.end];
-                    try self.writer.writeByteNTimes(' ', indent);
-
                     if (std.ascii.isAlphabetic(name[0])) {
-                        try self.writer.print("{s} '{'}'\n", .{
-                            name, std.zig.fmtEscapes(text),
-                        });
+                        try self.writer.writeAll(name);
+                        try self.writer.print(" '{'}'", .{std.zig.fmtEscapes(text)});
                     } else {
-                        try self.writer.print("{s}\n", .{name});
+                        try self.writer.writeAll(name);
                     }
+                    if (with_spans) try self.writer.print(" {}..{}", .{ tok.start, tok.end });
+                    try self.writer.writeByte('\n');
                 }
 
                 if (node.getRange()) |range| {
                     defer self.indent = indent;
-                    try self.writer.writeByteNTimes(' ', indent);
-                    try self.writer.print("{s}\n", .{name});
+                    try self.writer.writeAll(name);
+                    if (with_spans) {
+                        const span = self.tree.nodeSpan(@intCast(index));
+                        try self.writer.print(" {}..{}", .{ span.start, span.end });
+                    }
+                    try self.writer.writeByte('\n');
                     self.indent += 2;
                     for (range.start..range.end) |child| {
                         try self.writeNode(child);
@@ -326,19 +366,14 @@ pub const Tree = struct {
     }
 };
 
-pub const Range = struct {
-    start: u32,
-    end: u32,
-};
-
-pub const Token = struct {
-    start: u32,
-    end: u32,
-};
-
 const TokenSet = std.EnumSet(Tag);
 
-pub const Span = Token;
+pub const Span = struct {
+    start: u32,
+    end: u32,
+};
+pub const Token = Span;
+pub const Range = Span;
 
 pub const Diagnostic = struct {
     span: Span,
@@ -366,7 +401,7 @@ pub const Parser = struct {
         return .{
             .allocator = allocator,
             .tokenizer = Tokenizer{ .source = source },
-            .next = .{ .tag = .eof, .data = .{ .token = .{ .start = 0, .end = 0 } } },
+            .next = .{ .tag = .eof, .span = .{ .start = 0, .end = 0 } },
             .options = options,
         };
     }
@@ -459,7 +494,13 @@ pub const Parser = struct {
             .span = self.next.getToken() orelse unreachable,
             .message = message,
         });
-        self.close(self.open(), .invalid);
+
+        const m = self.open();
+        self.deferError(self.stack.append(self.allocator, .{
+            .tag = .unknown,
+            .span = .{ .start = self.next.span.start, .end = self.next.span.start },
+        }));
+        self.close(m, .invalid);
     }
 
     fn advanceWithError(self: *@This(), message: []const u8) void {
@@ -486,7 +527,7 @@ pub const Parser = struct {
 
     fn closeRange(self: *@This(), mark: Mark) Range {
         const tags = self.stack.items(.tag)[mark.index..];
-        const data = self.stack.items(.data)[mark.index..];
+        const spans = self.stack.items(.span)[mark.index..];
 
         const start = self.tree.nodes.len;
         const end = start + tags.len;
@@ -494,7 +535,7 @@ pub const Parser = struct {
         self.deferError(self.tree.nodes.ensureUnusedCapacity(self.allocator, tags.len));
         self.tree.nodes.len = end;
         @memcpy(self.tree.nodes.items(.tag)[start..], tags);
-        @memcpy(self.tree.nodes.items(.data)[start..], data);
+        @memcpy(self.tree.nodes.items(.span)[start..], spans);
 
         self.stack.len = mark.index;
 
@@ -509,7 +550,7 @@ pub const Parser = struct {
         const range = self.closeRange(mark);
         self.deferError(self.stack.append(self.allocator, .{
             .tag = tag,
-            .data = .{ .range = range },
+            .span = range,
         }));
     }
 };
@@ -630,8 +671,8 @@ fn parameter(p: *Parser) void {
     const m_name = p.open();
     if (p.eat(.identifier)) {
         if (p.at(.@"[")) arraySpecifier(p, m_name);
+        p.close(m_name, .variable_declaration);
     }
-    p.close(m_name, .variable_declaration);
     if (!p.at(.@")")) p.expect(.@",");
 
     p.close(m, .parameter);
@@ -768,6 +809,7 @@ fn statement(p: *Parser) void {
 
             if (p.atAny(type_qualifier_first)) {
                 typeQualifier(p);
+                typeSpecifier(p);
                 is_decl = true;
             } else {
                 if (!expressionOpt(p)) p.emitError("expected a statement");
@@ -1268,7 +1310,7 @@ pub const Tokenizer = struct {
                 while (i < N and isIdentifierChar(text[i])) i += 1;
                 const ident = self.tokenSpan(i);
                 const tag = mapKeyword(self.source[ident.start..ident.end]);
-                return .{ .tag = tag, .data = .{ .token = ident } };
+                return .{ .tag = tag, .span = ident };
             },
 
             '"' => {
@@ -1421,10 +1463,10 @@ pub const Tokenizer = struct {
     }
 
     fn token(self: *@This(), comptime tag: Tag, end: u32) Node {
-        return .{ .tag = tag, .data = .{ .token = self.tokenSpan(end) } };
+        return .{ .tag = tag, .span = self.tokenSpan(end) };
     }
 
-    fn tokenSpan(self: *@This(), end: u32) Token {
+    fn tokenSpan(self: *@This(), end: u32) Span {
         const start = self.offset;
         self.offset = end;
         return .{ .start = start, .end = end };

@@ -9,7 +9,7 @@ const Document = @import("Document.zig");
 pub fn findDefinition(document: *Document, node: u32) !?Reference {
     const workspace = document.workspace;
     const parse_tree = try document.parseTree();
-    const tree = parse_tree.raw;
+    const tree = parse_tree.tree;
 
     if (tree.tag(node) != .identifier) return null;
 
@@ -23,7 +23,7 @@ pub fn findDefinition(document: *Document, node: u32) !?Reference {
     for (symbols.items) |symbol| {
         const source = symbol.document.source();
         const parsed = try symbol.document.parseTree();
-        if (isExpectedIdentifier(parsed.raw, symbol.node, source, name)) {
+        if (isExpectedIdentifier(parsed.tree, symbol.node, source, name)) {
             return symbol;
         }
     } else {
@@ -34,7 +34,7 @@ pub fn findDefinition(document: *Document, node: u32) !?Reference {
 /// Get a list of all symbols visible starting from the given syntax node
 pub fn visibleSymbols(document: *Document, node: u32, symbols: *std.ArrayList(Reference)) !void {
     const parse_tree = try document.parseTree();
-    const tree = parse_tree.raw;
+    const tree = parse_tree.tree;
 
     // walk the tree upwards until we find the containing declaration
     var current = node;
@@ -44,7 +44,7 @@ pub fn visibleSymbols(document: *Document, node: u32, symbols: *std.ArrayList(Re
         const children = parent_node.getRange() orelse unreachable;
 
         // search for the identifier among the children
-        var current_child = current + 1;
+        var current_child = if (parent_node.tag == .file) children.end else current + 1;
         while (current_child > children.start) {
             current_child -= 1;
             try findVisibleSymbols(
@@ -67,6 +67,7 @@ fn findVisibleSymbols(
     symbols: *std.ArrayList(Reference),
     options: struct {
         check_children: bool = true,
+        parent_declaration: ?u32 = null,
     },
 ) !void {
     switch (tree.tag(index)) {
@@ -78,7 +79,11 @@ fn findVisibleSymbols(
 
                 switch (tree.tag(child)) {
                     .identifier => {
-                        try symbols.append(.{ .document = document, .node = child });
+                        try symbols.append(.{
+                            .document = document,
+                            .node = child,
+                            .parent_declaration = options.parent_declaration orelse index,
+                        });
                         continue;
                     },
                     else => {},
@@ -103,6 +108,10 @@ fn findVisibleSymbols(
                 child -= 1;
                 try findVisibleSymbols(document, tree, child, symbols, .{
                     .check_children = options.check_children or tag == .block_declaration,
+                    .parent_declaration = switch (tag) {
+                        .declaration, .parameter, .field_declaration, .function_declaration => index,
+                        else => options.parent_declaration,
+                    },
                 });
             }
         },
@@ -111,23 +120,8 @@ fn findVisibleSymbols(
 
 fn isExpectedIdentifier(tree: Tree, index: u32, source: []const u8, name: []const u8) bool {
     const node = tree.nodes.get(index);
-    const token = if (node.tag == .identifier) node.data.token else return false;
+    const token = if (node.tag == .identifier) node.span else return false;
     return std.mem.eql(u8, source[token.start..token.end], name);
-}
-
-fn isDeclaration(tag: parse.Node.Tag) bool {
-    return switch (tag) {
-        .declaration,
-        .block_declaration,
-        .function_declaration,
-        .precision_declaration,
-        .qualifier_declaration,
-        .variable_declaration,
-        .field_declaration,
-        .parameter,
-        => true,
-        else => false,
-    };
 }
 
 pub const Reference = struct {
@@ -135,6 +129,18 @@ pub const Reference = struct {
     document: *Document,
     /// Index of the syntax node where the reference is declared.
     node: u32,
+    /// Index of the parent node which declares the identifier.
+    parent_declaration: u32,
+
+    pub fn span(self: @This()) parse.Span {
+        const parsed = &self.document.parse_tree.?;
+        return parsed.tree.nodes.items(.span)[self.node];
+    }
+
+    pub fn name(self: @This()) []const u8 {
+        const s = self.span();
+        return self.document.source()[s.start..s.end];
+    }
 };
 
 test "find definition local variable" {
@@ -246,7 +252,7 @@ const Cursor = struct {
 
 fn findCursors(document: *Document) !std.StringHashMap(Cursor) {
     const parsed = try document.parseTree();
-    const tree = &parsed.raw;
+    const tree = &parsed.tree;
 
     var cursors = std.StringHashMap(Cursor).init(document.workspace.allocator);
     errdefer cursors.deinit();
