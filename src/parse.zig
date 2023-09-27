@@ -163,7 +163,6 @@ pub const Tag = enum(u8) {
     struct_specifier,
 
     field_declaration_list,
-    field_declaration,
 
     subroutine_qualifier,
     layout_qualifier,
@@ -171,6 +170,7 @@ pub const Tag = enum(u8) {
     block_declaration,
     qualifier_declaration,
     variable_declaration,
+    variable_declaration_list,
     declaration,
     function_declaration,
     parameter_list,
@@ -611,12 +611,14 @@ fn externalDeclaration(p: *Parser) void {
         return p.close(m, .qualifier_declaration);
     }
 
-    var first = true;
-    while (!p.eof() and !p.at(.@";")) : (first = false) {
+    const m_vars = p.open();
+
+    var count: u32 = 0;
+    while (!p.eof() and !p.at(.@";")) : (count += 1) {
         const m_var = p.open();
         if (!p.eat(.identifier)) break;
 
-        if (first) {
+        if (count == 0) {
             const m_params = p.open();
             if (p.eat(.@"(")) {
                 // function declaration
@@ -642,6 +644,9 @@ fn externalDeclaration(p: *Parser) void {
 
         variableDeclarationSuffix(p, m_var);
     }
+
+    if (count > 1) p.close(m_vars, .variable_declaration_list);
+
     p.expect(.@";");
     return p.close(m, .declaration);
 }
@@ -815,10 +820,7 @@ fn statement(p: *Parser) void {
                 if (!expressionOpt(p)) p.emitError("expected a statement");
             }
 
-            while (p.at(.identifier)) {
-                variableDeclaration(p);
-                is_decl = true;
-            }
+            if (variableDeclarationList(p) > 0) is_decl = true;
 
             p.expect(.@";");
 
@@ -827,6 +829,16 @@ fn statement(p: *Parser) void {
     }
 
     p.close(m, .statement);
+}
+
+fn variableDeclarationList(p: *Parser) u32 {
+    const m_vars = p.open();
+    var var_count: u32 = 0;
+    while (p.at(.identifier)) : (var_count += 1) {
+        variableDeclaration(p);
+    }
+    if (var_count > 1) p.close(m_vars, .variable_declaration_list);
+    return var_count;
 }
 
 fn variableDeclaration(p: *Parser) void {
@@ -1085,9 +1097,9 @@ fn structFieldDeclaration(p: *Parser) void {
     const m = p.open();
     typeQualifier(p);
     typeSpecifier(p);
-    while (p.at(.identifier)) variableDeclaration(p);
+    if (variableDeclarationList(p) == 0) p.emitError("expected an identifier");
     p.expect(.@";");
-    p.close(m, .field_declaration);
+    p.close(m, .declaration);
 }
 
 const type_specifier_first = TokenSet.initMany(&.{ .identifier, .keyword_struct });

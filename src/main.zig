@@ -660,9 +660,10 @@ pub const Dispatch = struct {
 
 test {
     std.testing.refAllDeclsRecursive(@This());
-    _ = @import("Workspace.zig");
-    _ = @import("Document.zig");
-    _ = @import("parse.zig");
-    _ = @import("format.zig");
-    _ = @import("analysis.zig");
+    std.testing.refAllDeclsRecursive(@import("Workspace.zig"));
+    std.testing.refAllDeclsRecursive(@import("Document.zig"));
+    std.testing.refAllDeclsRecursive(@import("parse.zig"));
+    std.testing.refAllDeclsRecursive(@import("format.zig"));
+    std.testing.refAllDeclsRecursive(@import("analysis.zig"));
+    std.testing.refAllDeclsRecursive(@import("syntax.zig"));
 }

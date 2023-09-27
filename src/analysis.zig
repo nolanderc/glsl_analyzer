@@ -109,7 +109,7 @@ fn findVisibleSymbols(
                 try findVisibleSymbols(document, tree, child, symbols, .{
                     .check_children = options.check_children or tag == .block_declaration,
                     .parent_declaration = switch (tag) {
-                        .declaration, .parameter, .field_declaration, .function_declaration => index,
+                        .declaration, .parameter, .function_declaration, .block_declaration => index,
                         else => options.parent_declaration,
                     },
                 });
