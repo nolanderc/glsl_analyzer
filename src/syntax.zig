@@ -281,23 +281,25 @@ fn ListExtractor(comptime tag: Tag, comptime Prefix: ?type, comptime Item: type,
 }
 
 fn UnionExtractorMixin(comptime Self: type) type {
-    const fields = std.meta.fields(Self);
-
-    var match_fields: [fields.len]std.builtin.Type.UnionField = undefined;
-
-    for (&match_fields, fields) |*match_field, field| {
-        match_field.* = field;
-        match_field.type = MatchResult(field.type);
-    }
-
-    const MatchUnion = @Type(.{ .Union = .{
-        .layout = .Extern,
-        .fields = &match_fields,
-        .tag_type = std.meta.Tag(Self),
-        .decls = &.{},
-    } });
-
     return struct {
+        const fields = std.meta.fields(Self);
+
+        const MatchUnion = @Type(.{ .Union = .{
+            .layout = .Extern,
+            .fields = blk: {
+                var match_fields: [fields.len]std.builtin.Type.UnionField = undefined;
+
+                for (&match_fields, fields) |*match_field, field| {
+                    match_field.* = field;
+                    match_field.type = MatchResult(field.type);
+                }
+
+                break :blk &match_fields;
+            },
+            .tag_type = std.meta.Tag(Self),
+            .decls = &.{},
+        } });
+
         pub fn match(tree: *const Tree, node: u32) ?MatchUnion {
             inline for (fields) |field| {
                 if (field.type.match(tree, node)) |value| {
@@ -326,22 +328,41 @@ fn Lazy(comptime type_name: []const u8) type {
     return struct {
         tree: *const Tree,
         node: u32,
+        match_result_bytes: [4]u8,
 
-        fn Type() type {
-            return @field(syntax, type_name);
+        const Type = @field(syntax, type_name);
+        const Match = MatchResult(Type);
+        const MatchInt = std.meta.Int(.unsigned, 8 * @sizeOf(Match));
+
+        fn encodeMatchResult(res: Match) [4]u8 {
+            switch (@sizeOf(Match)) {
+                0...4 => return std.mem.toBytes(res) ++ [_]u8{0} ** (4 - @sizeOf(Match)),
+                else => return .{ 0, 0, 0, 0 },
+            }
         }
 
-        pub fn match(tree: *const Tree, node: u32) ?void {
-            return if (Type().match(tree, node) != null) {} else null;
+        fn decodeMatchResult(self: @This()) Match {
+            switch (@sizeOf(Match)) {
+                0...4 => return std.mem.bytesToValue(Match, self.match_result_bytes[0..@sizeOf(Match)]),
+                else => return Type.match(self.tree, self.node).?,
+            }
         }
 
-        pub fn extract(tree: *const Tree, node: u32, _: void) @This() {
-            return .{ .tree = tree, .node = node };
+        pub fn match(tree: *const Tree, node: u32) ?[4]u8 {
+            return encodeMatchResult(Type.match(tree, node) orelse return null);
         }
 
-        pub fn get(self: @This()) Type() {
-            const match_result = Type().match(self.tree, self.node).?;
-            return Type().extract(self.tree, self.node, match_result);
+        pub fn extract(tree: *const Tree, node: u32, match_result_bytes: [4]u8) @This() {
+            return .{
+                .tree = tree,
+                .node = node,
+                .match_result_bytes = match_result_bytes,
+            };
+        }
+
+        pub fn get(self: @This()) Type {
+            const match_result = self.decodeMatchResult();
+            return Type.extract(self.tree, self.node, match_result);
         }
     };
 }
