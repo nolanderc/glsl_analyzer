@@ -13,6 +13,7 @@ pub fn parse(
 ) !Tree {
     var parser = Parser.init(allocator, source, options);
     defer parser.deinit();
+
     parser.advance();
     parseFile(&parser);
     return parser.finish();
@@ -1533,6 +1534,68 @@ pub const Tokenizer = struct {
 
 fn stripPrefix(text: []const u8, prefix: []const u8) ?[]const u8 {
     return if (std.mem.startsWith(u8, text, prefix)) text[prefix.len..] else null;
+}
+
+pub const Directive = union(enum) {
+    define: struct { name: Span },
+    include: struct { path: Span },
+};
+
+pub fn parsePreprocessorDirective(line: []const u8) ?Directive {
+    var i: u32 = 0;
+
+    i = skipWhitespace(i, line);
+    if (!skipChar(i, line, '#')) return null;
+    i += 1;
+
+    i = skipWhitespace(i, line);
+    const kind_start = i;
+    const kind_end = skipIdentifier(i, line);
+    const kind = line[kind_start..kind_end];
+    i = kind_end;
+
+    i = skipWhitespace(i, line);
+
+    if (std.mem.eql(u8, kind, "define")) {
+        const name_start = i;
+        const name_end = skipIdentifier(i, line);
+        if (name_start == name_end) return null;
+        return .{ .define = .{ .name = .{ .start = name_start, .end = name_end } } };
+    }
+
+    if (std.mem.eql(u8, kind, "include")) {
+        const terminator: u8 = if (skipChar(i, line, '"'))
+            '"'
+        else if (skipChar(i, line, '<'))
+            '>'
+        else
+            return null;
+        i += 1;
+
+        const path_start = i;
+        while (i < line.len and line[i] != terminator) i += 1;
+        const path_end = i;
+
+        return .{ .include = .{ .path = .{ .start = path_start, .end = path_end } } };
+    }
+
+    return null;
+}
+
+fn skipChar(index: u32, text: []const u8, char: u8) bool {
+    return index < text.len and text[index] == char;
+}
+
+fn skipWhitespace(start: u32, text: []const u8) u32 {
+    var i = start;
+    while (i < text.len and std.ascii.isWhitespace(text[i])) i += 1;
+    return i;
+}
+
+fn skipIdentifier(start: u32, text: []const u8) u32 {
+    var i = start;
+    while (i < text.len and Tokenizer.isIdentifierChar(text[i])) i += 1;
+    return i;
 }
 
 test {

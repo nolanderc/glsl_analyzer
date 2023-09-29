@@ -69,7 +69,7 @@ pub fn getOrLoadDocument(
         const max_megabytes = 16;
         const path = try uriPath(document.uri);
         const contents = try std.fs.cwd().readFileAlloc(self.allocator, path, max_megabytes << 20);
-        defer self.allocator.free(contents);
+        errdefer self.allocator.free(contents);
 
         entry.key_ptr.* = try self.allocator.dupe(u8, document.uri);
         entry.value_ptr.* = .{

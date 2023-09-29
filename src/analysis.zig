@@ -163,6 +163,8 @@ fn expectTypeFormat(source: []const u8, types: []const []const u8) !void {
 // Given a node in the given parse tree, attempts to find the node(s) it references.
 pub fn findDefinition(document: *Document, node: u32, references: *std.ArrayList(Reference)) !void {
     const workspace = document.workspace;
+    const allocator = workspace.allocator;
+
     const parse_tree = try document.parseTree();
     const tree = parse_tree.tree;
 
@@ -171,8 +173,9 @@ pub fn findDefinition(document: *Document, node: u32, references: *std.ArrayList
     const identifier = tree.token(node);
     const name = document.source()[identifier.start..identifier.end];
 
-    var symbols = std.ArrayList(Reference).init(workspace.allocator);
+    var symbols = std.ArrayList(Reference).init(allocator);
     defer symbols.deinit();
+
     try visibleSymbols(document, node, &symbols);
 
     for (symbols.items) |symbol| {
@@ -185,19 +188,93 @@ pub fn findDefinition(document: *Document, node: u32, references: *std.ArrayList
 }
 
 /// Get a list of all symbols visible starting from the given syntax node
-pub fn visibleSymbols(document: *Document, node: u32, symbols: *std.ArrayList(Reference)) !void {
+pub fn visibleSymbols(
+    start_document: *Document,
+    start_node: u32,
+    symbols: *std.ArrayList(Reference),
+) !void {
+    const workspace = start_document.workspace;
+    const allocator = workspace.allocator;
+
+    var visited_documents = std.AutoHashMap(*Document, void).init(allocator);
+    defer visited_documents.deinit();
+
+    var stack = std.ArrayList(struct { document: *Document, node: ?u32 }).init(allocator);
+    defer stack.deinit();
+
+    try stack.append(.{ .document = start_document, .node = start_node });
+    try visited_documents.put(start_document, {});
+
+    while (stack.popOrNull()) |current| {
+        const document = current.document;
+        const parse_tree = try document.parseTree();
+        const tree = parse_tree.tree;
+        const node = current.node orelse tree.rootIndex();
+
+        try visibleSymbolsTree(document, tree.parent(node) orelse node, symbols);
+
+        if (std.fs.path.dirname(document.uri)) |document_dir| {
+            const node_start = tree.nodeSpanExtreme(node, .start);
+
+            // parse include directives
+            for (parse_tree.ignored.items) |ignored| {
+                // only process directives before the node:
+                if (ignored.end > node_start) break;
+
+                const line = document.source()[ignored.start..ignored.end];
+                const directive = parse.parsePreprocessorDirective(line) orelse continue;
+                switch (directive) {
+                    .include => |include| {
+                        const relative_path = line[include.path.start..include.path.end];
+                        const uri = if (std.fs.path.isAbsolute(relative_path))
+                            try std.fs.path.join(allocator, &.{ "file://", relative_path })
+                        else
+                            try std.fs.path.join(allocator, &.{ document_dir, relative_path });
+                        defer allocator.free(uri);
+
+                        const included_document = workspace.getOrLoadDocument(.{ .uri = uri }) catch |err| {
+                            std.log.err("could not open '{'}': {s}", .{
+                                std.zig.fmtEscapes(uri),
+                                @errorName(err),
+                            });
+                            continue;
+                        };
+
+                        const entry = try visited_documents.getOrPut(included_document);
+                        if (entry.found_existing) continue;
+
+                        try stack.append(.{ .document = included_document, .node = null });
+                    },
+                    else => continue,
+                }
+            }
+        }
+    }
+}
+
+fn visibleSymbolsTree(document: *Document, start_node: u32, symbols: *std.ArrayList(Reference)) !void {
     const parse_tree = try document.parseTree();
     const tree = parse_tree.tree;
 
     // walk the tree upwards until we find the containing declaration
-    var current = node;
-    while (true) {
-        const parent = tree.parent(current) orelse break;
-        const parent_node = tree.nodes.get(parent);
-        const children = parent_node.getRange() orelse unreachable;
+    var current = start_node;
+    var previous = start_node;
+    while (true) : ({
+        previous = current;
+        current = tree.parent(current) orelse break;
+    }) {
+        const children = tree.children(current);
+
+        const tag = tree.tag(current);
+
+        var current_child = if (tag == .file)
+            children.end
+        else if (previous != current)
+            previous
+        else
+            continue;
 
         // search for the identifier among the children
-        var current_child = if (parent_node.tag == .file) children.end else current + 1;
         while (current_child > children.start) {
             current_child -= 1;
             try findVisibleSymbols(
@@ -205,11 +282,9 @@ pub fn visibleSymbols(document: *Document, node: u32, symbols: *std.ArrayList(Re
                 tree,
                 current_child,
                 symbols,
-                .{ .check_children = parent_node.tag != .file },
+                .{ .check_children = tag != .file },
             );
         }
-
-        current = parent;
     }
 }
 
@@ -224,7 +299,25 @@ fn findVisibleSymbols(
     },
 ) !void {
     switch (tree.tag(index)) {
-        .function_declaration, .struct_specifier, .variable_declaration => {
+        .function_declaration => {
+            if (syntax.FunctionDeclaration.tryExtract(tree, index)) |function| {
+                if (function.get(.identifier, tree)) |identifier| {
+                    try symbols.append(.{
+                        .document = document,
+                        .node = identifier.node,
+                        .parent_declaration = index,
+                    });
+                }
+            }
+
+            const children = tree.children(index);
+            var child = children.end;
+            while (child > children.start) {
+                child -= 1;
+                try findVisibleSymbols(document, tree, child, symbols, options);
+            }
+        },
+        .struct_specifier, .variable_declaration => {
             const children = tree.children(index);
             var child = children.end;
             while (child > children.start) {

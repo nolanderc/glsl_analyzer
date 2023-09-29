@@ -507,7 +507,7 @@ pub const Dispatch = struct {
 
                 const symbol_type = try analysis.typeOf(symbol);
 
-                const signature = if (symbol_type) |typ|
+                const type_signature = if (symbol_type) |typ|
                     try std.fmt.allocPrint(
                         symbol_arena.allocator(),
                         "{}",
@@ -519,7 +519,7 @@ pub const Dispatch = struct {
                 try completions.append(.{
                     .label = symbol.name(),
                     .labelDetails = .{
-                        .detail = signature,
+                        .detail = type_signature,
                     },
                     .kind = switch (parsed.tree.tag(symbol.parent_declaration)) {
                         .struct_specifier => .class,
@@ -634,7 +634,7 @@ pub const Dispatch = struct {
         for (references.items, locations) |reference, *location| {
             location.* = .{
                 .uri = reference.document.uri,
-                .range = try document.nodeRange(reference.node),
+                .range = try reference.document.nodeRange(reference.node),
             };
         }
 
