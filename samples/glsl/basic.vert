@@ -4,14 +4,18 @@
 
 void print();
 
+layout(location = 0) in vec3 position[4];
+
 int add(int x, int y) {
+    return x + y;
+}
+
+float add(float x, float y) {
     return x + y;
 }
 
 int main() {
     const vec4 color = vec4(0.3, 0.5 + 3, -3, 1);
-
-    const int len = 10;
 
     Rectangle r = Rectangle(vec2(1, 2), vec2(3, 4));
 
@@ -27,6 +31,6 @@ int main() {
 }
 
 struct Light {
-    vec4 color; // color of the light
+    vec3 color; // color of the light
     float size; // radius of the light
 };

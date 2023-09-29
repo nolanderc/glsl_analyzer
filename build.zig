@@ -24,14 +24,18 @@ pub fn build(b: *std.Build) !void {
     run_step.dependOn(&run_cmd.step);
 
     const unit_tests = b.addTest(.{
+        .name = "unit-tests",
         .root_source_file = .{ .path = "src/main.zig" },
         .target = target,
         .optimize = optimize,
     });
     try attachModules(unit_tests);
 
-    const run_unit_tests = b.addRunArtifact(unit_tests);
+    if (b.option(bool, "install-tests", "Install the unit tests in the `bin` folder") orelse false) {
+        b.installArtifact(unit_tests);
+    }
 
+    const run_unit_tests = b.addRunArtifact(unit_tests);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_unit_tests.step);
 }

@@ -547,7 +547,22 @@ pub const Parser = struct {
 
     fn close(self: *@This(), mark: Mark, comptime tag: Tag) void {
         comptime std.debug.assert(tag.isSyntax());
+
         const range = self.closeRange(mark);
+
+        if (tag == .invalid) {
+            // merge the nodes if they are adjacent
+
+            const tags = self.stack.items(.tag);
+            if (tags.len != 0 and tags[tags.len - 1] == .invalid) {
+                const spans = self.stack.items(.span);
+                if (spans[spans.len - 1].end == range.start) {
+                    spans[spans.len - 1].end = range.end;
+                    return;
+                }
+            }
+        }
+
         self.deferError(self.stack.append(self.allocator, .{
             .tag = tag,
             .span = range,

@@ -161,3 +161,8 @@ pub const MarkupContent = struct {
     kind: Kind,
     value: []const u8,
 };
+
+pub const Location = struct {
+    uri: []const u8,
+    range: Range,
+};

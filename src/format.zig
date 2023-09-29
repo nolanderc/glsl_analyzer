@@ -1,22 +1,31 @@
 const std = @import("std");
 const parse = @import("parse.zig");
 
-pub const ExtraTokens = struct {
+pub const FormatOptions = struct {
     ignored: []const parse.Token = &.{},
+    root_node: ?u32 = null,
+    single_line: bool = false,
 };
 
 pub fn format(
     tree: parse.Tree,
     source: []const u8,
     writer: anytype,
-    extra: ExtraTokens,
+    options: FormatOptions,
 ) !void {
     var inner_writer = Writer(@TypeOf(writer)){
         .child_writer = writer,
         .source = source,
-        .extra = extra,
+        .ignored_tokens = options.ignored,
+        .single_line = options.single_line,
     };
-    try formatNode(tree, tree.rootIndex(), &inner_writer);
+
+    const root = if (options.root_node) |root| blk: {
+        inner_writer.last_emit = tree.nodeSpanExtreme(root, .start);
+        break :blk root;
+    } else tree.rootIndex();
+
+    try formatNode(tree, root, &inner_writer);
 }
 
 fn Writer(comptime ChildWriter: type) type {
@@ -30,9 +39,10 @@ fn Writer(comptime ChildWriter: type) type {
         preceded_by_space: bool = true,
         pending_space: bool = false,
 
+        single_line: bool,
         line_breaks: LineBreaks = .{},
 
-        extra: ExtraTokens,
+        ignored_tokens: []const parse.Token,
         last_emit: u32 = 0,
         last_ignored: u32 = 0,
 
@@ -52,7 +62,7 @@ fn Writer(comptime ChildWriter: type) type {
             var start: usize = 0;
             while (std.mem.indexOfScalarPos(u8, bytes, start, '\n')) |end| {
                 try self.writeLine(bytes[start..end]);
-                try self.child_writer.writeByte('\n');
+                try self.child_writer.writeByte(if (self.single_line) ' ' else '\n');
                 start = end + 1;
                 self.needs_indent = true;
                 self.preceded_by_space = true;
@@ -92,9 +102,9 @@ fn Writer(comptime ChildWriter: type) type {
 
         fn emitLeadingTokens(self: *Self, until: u32) !void {
             while (self.last_emit < until) {
-                if (self.last_ignored >= self.extra.ignored.len) break;
+                if (self.last_ignored >= self.ignored_tokens.len) break;
 
-                const next = self.extra.ignored[self.last_ignored];
+                const next = self.ignored_tokens[self.last_ignored];
                 if (next.start > until) break;
                 self.last_ignored += 1;
 
@@ -119,9 +129,14 @@ fn Writer(comptime ChildWriter: type) type {
 
             newlines = std.math.clamp(newlines, line_breaks.min, line_breaks.max);
 
-            const newline_chars = [_]u8{'\n'} ** 4;
-
-            try self.writeAll(newline_chars[0..newlines]);
+            if (self.single_line) {
+                if (newlines > 0 and !self.preceded_by_space) {
+                    self.writeSpace();
+                }
+            } else {
+                const newline_chars = [_]u8{'\n'} ** 4;
+                try self.writeAll(newline_chars[0..newlines]);
+            }
 
             self.line_breaks = .{};
         }
@@ -203,14 +218,6 @@ fn formatNode(tree: parse.Tree, current: usize, writer: anytype) !void {
                     inside_block = true;
                     writer.line_breaks.max = 1;
                 }
-            }
-        },
-
-        // emit without spaces between childern
-        .layout_qualifier, .prefix, .postfix => {
-            const children = tree.children(current);
-            for (children.start..children.end) |child| {
-                try formatNode(tree, child, writer);
             }
         },
 
@@ -297,6 +304,14 @@ fn formatNode(tree: parse.Tree, current: usize, writer: anytype) !void {
                         else => {},
                     }
                 }
+            }
+        },
+
+        // emit without spaces between childern
+        .layout_qualifier, .prefix, .postfix, .array, .array_specifier => {
+            const children = tree.children(current);
+            for (children.start..children.end) |child| {
+                try formatNode(tree, child, writer);
             }
         },
 

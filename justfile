@@ -12,14 +12,18 @@ run *ARGS:
 watch command="build" *args='':
     watchexec -e zig,py,vert,frag,comp -c -- 'just {{command}} {{args}} && echo ok'
 
-build:
-    zig build --summary none {{flags}}
+build *ARGS:
+    zig build --summary none {{flags}} {{ARGS}}
 
 test:
     zig build test --summary failures {{flags}}
 
 test-file path:
     zig test {{flags}} '{{path}}'
+
+test-lldb:
+    zig build -Dinstall-tests
+    lldb --batch --one-line run -- ./zig-out/bin/unit-tests
 
 clean:
     rm -rf zig-cache zig-out

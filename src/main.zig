@@ -504,52 +504,24 @@ pub const Dispatch = struct {
 
             for (symbols.items) |symbol| {
                 const parsed: *const Workspace.Document.CompleteParseTree = try symbol.document.parseTree();
-                const decl_node = parsed.tree.nodes.get(symbol.parent_declaration);
 
-                const child_nodes: [2]u32 = .{
-                    symbol.node,
-                    parsed.tree.parent(symbol.node) orelse symbol.node,
-                };
+                const symbol_type = try analysis.typeOf(symbol);
 
-                // get type and qualifiers
-                var signature: ?[]const u8 = for (child_nodes) |child_node| {
-                    if (decl_node.span.start < child_node and child_node <= decl_node.span.end) {
-                        const start = parsed.tree.nodeSpanExtreme(decl_node.span.start, .start);
-                        const end = parsed.tree.nodeSpanExtreme(child_node - 1, .end);
-                        break symbol.document.source()[start..end];
-                    }
-                } else null;
-
-                // append parameters
-                if (signature != null and decl_node.tag == .function_declaration) {
-                    const tags = parsed.tree.nodes.items(.tag);
-                    for (decl_node.span.start..decl_node.span.end) |child| {
-                        if (tags[child] == .parameter_list) {
-                            const param_span = parsed.tree.nodeSpan(@intCast(child));
-                            var param_text: []const u8 = symbol.document.source()[param_span.start..param_span.end];
-                            signature = try std.mem.join(symbol_arena.allocator(), " ", &.{
-                                signature.?,
-                                param_text,
-                            });
-                        }
-                    }
-                }
-
-                // join all lines
-                if (signature) |signature_text| {
-                    if (std.mem.indexOfScalar(u8, signature_text, '\n') != null) {
-                        const tmp_text = try symbol_arena.allocator().dupe(u8, signature_text);
-                        std.mem.replaceScalar(u8, tmp_text, '\n', ' ');
-                        signature = tmp_text;
-                    }
-                }
+                const signature = if (symbol_type) |typ|
+                    try std.fmt.allocPrint(
+                        symbol_arena.allocator(),
+                        "{}",
+                        .{typ.format(parsed.tree, symbol.document.source())},
+                    )
+                else
+                    null;
 
                 try completions.append(.{
                     .label = symbol.name(),
                     .labelDetails = .{
                         .detail = signature,
                     },
-                    .kind = switch (decl_node.tag) {
+                    .kind = switch (parsed.tree.tag(symbol.parent_declaration)) {
                         .struct_specifier => .class,
                         .function_declaration => .function,
                         else => .variable,
@@ -646,15 +618,27 @@ pub const Dispatch = struct {
             return state.success(request.id, null);
         };
 
-        const reference = try analysis.findDefinition(document, source_node) orelse {
+        var references = std.ArrayList(analysis.Reference).init(state.allocator);
+        defer references.deinit();
+
+        try analysis.findDefinition(document, source_node, &references);
+
+        if (references.items.len == 0) {
             std.log.debug("could not find definition", .{});
             return state.success(request.id, null);
-        };
+        }
 
-        try state.success(request.id, .{
-            .uri = reference.document.uri,
-            .range = try document.nodeRange(reference.node),
-        });
+        var locations = try state.allocator.alloc(lsp.Location, references.items.len);
+        defer state.allocator.free(locations);
+
+        for (references.items, locations) |reference, *location| {
+            location.* = .{
+                .uri = reference.document.uri,
+                .range = try document.nodeRange(reference.node),
+            };
+        }
+
+        try state.success(request.id, locations);
     }
 };
 
