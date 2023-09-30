@@ -5,7 +5,7 @@ pub const NAME = "glsl_analyzer";
 pub const Arguments = struct {
     channel: ChannelKind = .stdio,
     client_pid: ?c_int = null,
-    dev_mode: bool = false,
+    dev_mode: ?[]const u8 = null,
 
     pub const ChannelKind = union(enum) {
         stdio: void,
@@ -58,15 +58,17 @@ pub const Arguments = struct {
             }
 
             if (isAny(name, &.{"--dev-mode"})) {
-                parsed.dev_mode = true;
+                const path = extra_value orelse args.next() orelse
+                    fail("{s}: expected a path", .{name});
+                parsed.dev_mode = path;
                 continue;
             }
 
             if (isAny(name, &.{ "--port", "-p" })) {
                 const value = extra_value orelse args.next() orelse
-                    fail("expected port number", .{});
+                    fail("{s}: expected port number", .{name});
                 const port = std.fmt.parseInt(u16, value, 10) catch
-                    fail("not a valid port number: {s}", .{value});
+                    fail("{s}: not a valid port number: {s}", .{ name, value });
                 parsed.channel = .{ .socket = port };
                 continue;
             }
@@ -74,7 +76,7 @@ pub const Arguments = struct {
             if (isAny(name, &.{"--clientProcessId"})) {
                 const value = extra_value orelse args.next() orelse fail("expected PID", .{});
                 parsed.client_pid = std.fmt.parseInt(c_int, value, 10) catch
-                    fail("not a valid PID: {s}", .{value});
+                    fail("{s}: not a valid PID: {s}", .{ name, value });
                 continue;
             }
 

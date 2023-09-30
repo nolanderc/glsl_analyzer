@@ -12,12 +12,10 @@ const cli = @import("cli.zig");
 const analysis = @import("analysis.zig");
 
 pub const std_options = struct {
-    pub const log_level = .debug;
+    pub const log_level = .warn;
 };
 
-const stderr_target = build_options.build_root ++ "/stderr.log";
-
-fn enableDevelopmentMode() !void {
+fn enableDevelopmentMode(stderr_target: []const u8) !void {
     // redirect stderr to the build root
     const O = std.os.O;
     const S = std.os.S;
@@ -39,8 +37,9 @@ pub fn main() !void {
 
     const args = try cli.Arguments.parse(allocator);
 
-    if (args.dev_mode) {
-        try enableDevelopmentMode();
+    if (args.dev_mode) |stderr_target| {
+        try enableDevelopmentMode(stderr_target);
+
         std.debug.print("\x1b[2J", .{}); // clear screen
         std.log.info("entered development mode '{s}'", .{stderr_target});
     }

@@ -2,7 +2,7 @@
 
 #include "common.glsl"
 
-layout(location = 0) in vec3 position[4];
+layout(location = 0) in vec3 position;
 
 void main() {
     const vec4 color = vec4(0.3, 0.5 + 3, -3, 1);
