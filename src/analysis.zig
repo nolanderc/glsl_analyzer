@@ -150,7 +150,13 @@ fn expectTypeFormat(source: []const u8, types: []const []const u8) !void {
     for (types, cursors.values()) |expected, cursor| {
         if (cursor.usages.len != 0) return error.DuplicateCursor;
 
-        const ref = try findDefinition(document, cursor.definition) orelse return error.InvalidReference;
+        var references = std.ArrayList(Reference).init(allocator);
+        defer references.deinit();
+
+        try findDefinition(document, cursor.definition, &references);
+        if (references.items.len != 1) return error.InvalidReference;
+        const ref = references.items[0];
+
         const typ = try typeOf(ref) orelse return error.InvalidType;
 
         const found = try std.fmt.allocPrint(allocator, "{}", .{typ.format(tree, document.source())});
@@ -183,8 +189,17 @@ pub fn findDefinition(document: *Document, node: u32, references: *std.ArrayList
         const parsed = try symbol.document.parseTree();
         if (isExpectedIdentifier(parsed.tree, symbol.node, source, name)) {
             try references.append(symbol);
+            if (!inFileRoot(parsed.tree, symbol.parent_declaration)) break;
         }
     }
+}
+
+fn inFileRoot(tree: Tree, node: u32) bool {
+    const parent = tree.parent(node) orelse {
+        // node is the file root
+        return true;
+    };
+    return tree.tag(parent) == .file;
 }
 
 /// Get a list of all symbols visible starting from the given syntax node
@@ -447,7 +462,12 @@ fn expectDefinitionIsFound(source: []const u8) !void {
 
     for (cursors.values()) |cursor| {
         for (cursor.usages.slice()) |usage| {
-            const ref = try findDefinition(document, usage) orelse return error.ReferenceNotFound;
+            var references = std.ArrayList(Reference).init(workspace.allocator);
+            defer references.deinit();
+            try findDefinition(document, usage, &references);
+            if (references.items.len == 0) return error.ReferenceNotFound;
+            if (references.items.len > 1) return error.MultipleDefinitions;
+            const ref = references.items[0];
             try std.testing.expectEqual(document, ref.document);
             try std.testing.expectEqual(cursor.definition, ref.node);
         }
@@ -466,9 +486,14 @@ fn expectDefinitionIsNotFound(source: []const u8) !void {
 
     for (cursors.values()) |cursor| {
         for (cursor.usages.slice()) |usage| {
-            const ref = try findDefinition(document, usage) orelse return;
-            std.debug.print("found unexpected reference: {s}:{}", .{ ref.document.uri, ref.node });
-            return error.FoundUnexpectedReference;
+            var references = std.ArrayList(Reference).init(workspace.allocator);
+            defer references.deinit();
+            try findDefinition(document, usage, &references);
+            if (references.items.len != 0) {
+                const ref = references.items[0];
+                std.debug.print("found unexpected reference: {s}:{}", .{ ref.document.uri, ref.node });
+                return error.FoundUnexpectedReference;
+            }
         }
     }
 }
