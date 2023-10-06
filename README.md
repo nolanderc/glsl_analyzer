@@ -16,6 +16,7 @@ Language server for GLSL (OpenGL Shading Language).
     - Built-in types (e.g., `vecN`, `matNxM`, `texture2D`, etc.)
     - Built-in functions (e.g., `length`, `imageLoad`, `packUnorm4x8`)
     - Includes all [extensions](https://github.com/KhronosGroup/GLSL#extension-specifications-in-this-repository)
+    - Fields
 - Goto Definition
 - Inline hover documentation for all builtin and extension functions/variables
 - Support for `#include`
@@ -26,7 +27,6 @@ Language server for GLSL (OpenGL Shading Language).
 
 ### In the pipeline
 
-- Completion of fields
 - Support for refactors (renaming)
 
 
