@@ -202,6 +202,79 @@ fn inFileRoot(tree: Tree, node: u32) bool {
     return tree.tag(parent) == .file;
 }
 
+pub fn visibleFields(document: *Document, node: u32, symbols: *std.ArrayList(Reference)) !void {
+    const name = blk: {
+        const parsed = try document.parseTree();
+        const tag = parsed.tree.tag(node);
+        if (tag != .identifier and tag != .@".") return;
+
+        const parent = parsed.tree.parent(node) orelse return;
+        const parent_tag = parsed.tree.tag(parent);
+        if (parent_tag != .selection) return;
+
+        const children = parsed.tree.children(parent);
+        if (node == children.start) return;
+
+        var first = children.start;
+        while (parsed.tree.tag(first).isSyntax()) {
+            const grand_children = parsed.tree.children(first);
+            if (grand_children.start == grand_children.end) return;
+            first = grand_children.start;
+        }
+        break :blk first;
+    };
+
+    var name_definitions = std.ArrayList(Reference).init(document.workspace.allocator);
+    defer name_definitions.deinit();
+    try findDefinition(document, name, &name_definitions);
+    if (name_definitions.items.len == 0) return;
+
+    var references = std.ArrayList(Reference).init(document.workspace.allocator);
+    defer references.deinit();
+
+    for (name_definitions.items) |name_definition| {
+        references.clearRetainingCapacity();
+        try references.append(name_definition);
+
+        var remaining_iterations: u32 = 16;
+
+        while (references.popOrNull()) |reference| {
+            if (remaining_iterations == 0 or references.items.len >= 128) break;
+            remaining_iterations -= 1;
+
+            const parsed = try reference.document.parseTree();
+            const tree = parsed.tree;
+
+            const typ = try typeOf(reference) orelse continue;
+            const specifier = typ.specifier orelse continue;
+
+            switch (specifier) {
+                .struct_specifier => |struct_spec| {
+                    const fields = struct_spec.get(.fields, tree) orelse continue;
+                    var iterator = fields.get(tree).iterator();
+                    while (iterator.next(tree)) |field| {
+                        const variables = field.get(.variables, tree) orelse continue;
+                        var variable_iterator = variables.iterator();
+                        while (variable_iterator.next(tree)) |variable| {
+                            const variable_name = variable.get(.name, tree) orelse continue;
+                            const variable_identifier = variable_name.getIdentifier(tree) orelse continue;
+                            try symbols.append(.{
+                                .document = reference.document,
+                                .node = variable_identifier.node,
+                                .parent_declaration = field.node,
+                            });
+                        }
+                    }
+                },
+                else => {
+                    const identifier = specifier.underlyingName(tree) orelse continue;
+                    try findDefinition(reference.document, identifier.node, &references);
+                },
+            }
+        }
+    }
+}
+
 /// Get a list of all symbols visible starting from the given syntax node
 pub fn visibleSymbols(
     start_document: *Document,

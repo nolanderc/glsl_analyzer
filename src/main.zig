@@ -12,7 +12,7 @@ const cli = @import("cli.zig");
 const analysis = @import("analysis.zig");
 
 pub const std_options = struct {
-    pub const log_level = .warn;
+    pub const log_level = .debug;
 };
 
 fn enableDevelopmentMode(stderr_target: []const u8) !void {
@@ -371,7 +371,9 @@ pub const Dispatch = struct {
 
         try state.success(request.id, .{
             .capabilities = .{
-                .completionProvider = .{},
+                .completionProvider = .{
+                    .triggerCharacters = .{"."},
+                },
                 .textDocumentSync = .{
                     .openClose = true,
                     .change = @intFromEnum(lsp.TextDocumentSyncKind.incremental),
@@ -494,10 +496,16 @@ pub const Dispatch = struct {
 
         const document = try getDocumentOrFail(state, request, params.value.textDocument);
 
+        var has_fields = false;
+
         if (try document.nodeBeforeCursor(params.value.position)) |node| {
             var symbols = std.ArrayList(analysis.Reference).init(state.allocator);
             defer symbols.deinit();
-            try analysis.visibleSymbols(document, node, &symbols);
+
+            try analysis.visibleFields(document, node, &symbols);
+            has_fields = symbols.items.len != 0;
+
+            if (!has_fields) try analysis.visibleSymbols(document, node, &symbols);
 
             try completions.ensureUnusedCapacity(symbols.items.len);
 
@@ -523,13 +531,22 @@ pub const Dispatch = struct {
                     .kind = switch (parsed.tree.tag(symbol.parent_declaration)) {
                         .struct_specifier => .class,
                         .function_declaration => .function,
-                        else => .variable,
+                        else => blk: {
+                            if (parsed.tree.parent(symbol.parent_declaration)) |grandparent| {
+                                if (parsed.tree.tag(grandparent) == .field_declaration_list) {
+                                    break :blk .field;
+                                }
+                            }
+                            break :blk .variable;
+                        },
                     },
                 });
             }
         }
 
-        try completions.appendSlice(state.workspace.builtin_completions);
+        if (!has_fields) {
+            try completions.appendSlice(state.workspace.builtin_completions);
+        }
 
         try state.success(request.id, completions.items);
     }

@@ -20,7 +20,7 @@ pub const Arguments = struct {
         \\     --stdio                  Communicate over stdio [default]
         \\ -p, --port <PORT>            Communicate over socket
         \\     --clientProcessId <PID>  PID of the client process
-        \\     --dev-mode               Enable development mode
+        \\     --dev-mode <path>        Enable development mode
         \\
         \\
     ;

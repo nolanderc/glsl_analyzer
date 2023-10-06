@@ -62,6 +62,31 @@ pub const Variables = union(enum) {
     pub usingnamespace UnionExtractorMixin(@This());
     one: VariableDeclaration,
     many: VariableDeclarationList,
+
+    pub const Iterator = union(enum) {
+        one: ?VariableDeclaration,
+        many: VariableDeclarationList.Iterator,
+
+        pub fn next(self: *@This(), tree: Tree) ?VariableDeclaration {
+            switch (self.*) {
+                .one => |*one| {
+                    const value = one.*;
+                    one.* = null;
+                    return value;
+                },
+                .many => |*many| {
+                    return many.next(tree);
+                },
+            }
+        }
+    };
+
+    pub fn iterator(self: @This()) Iterator {
+        return switch (self) {
+            .one => |one| .{ .one = one },
+            .many => |many| .{ .many = many.iterator() },
+        };
+    }
 };
 
 pub const VariableDeclarationList = ListExtractor(.variable_declaration_list, null, VariableDeclaration, null);
@@ -115,6 +140,14 @@ pub const TypeSpecifier = union(enum) {
     identifier: Token(.identifier),
     array_specifier: ArraySpecifierName,
     struct_specifier: StructSpecifier,
+
+    pub fn underlyingName(self: @This(), tree: Tree) ?Token(.identifier) {
+        switch (self) {
+            .identifier => |ident| return ident,
+            .array_specifier => |array| return array.prefix(tree),
+            else => return null,
+        }
+    }
 };
 
 pub const StructSpecifier = Extractor(.struct_specifier, struct {
