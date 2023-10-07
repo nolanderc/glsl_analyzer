@@ -13,7 +13,7 @@ const cli = @import("cli.zig");
 const analysis = @import("analysis.zig");
 
 pub const std_options = struct {
-    pub const log_level = .warn;
+    pub const log_level = .debug;
 };
 
 fn enableDevelopmentMode(stderr_target: []const u8) !void {
@@ -35,6 +35,8 @@ fn enableDevelopmentMode(stderr_target: []const u8) !void {
 }
 
 pub fn main() !void {
+    defer std.debug.print("exited\n", .{});
+
     var gpa = std.heap.GeneralPurposeAllocator(.{ .stack_trace_frames = 8 }){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
@@ -92,7 +94,7 @@ pub fn main() !void {
 
     const max_content_length = 4 << 20; // 4MB
 
-    outer: while (true) {
+    outer: while (state.running) {
         defer _ = parse_arena.reset(.retain_capacity);
 
         // read headers
@@ -231,6 +233,7 @@ pub const Channel = union(enum) {
 const State = struct {
     allocator: std.mem.Allocator,
     channel: *std.io.BufferedWriter(4096, Channel.Writer),
+    running: bool = true,
     initialized: bool = false,
     parent_pid: ?c_int = null,
     workspace: Workspace,
@@ -402,9 +405,8 @@ pub const Dispatch = struct {
     }
 
     pub fn shutdown(state: *State, request: *Request) !void {
-        _ = request;
-        _ = state;
-        return;
+        state.running = false;
+        try state.success(request.id, null);
     }
 
     pub fn initialized(state: *State, request: *Request) !void {
