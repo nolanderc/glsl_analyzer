@@ -5,8 +5,10 @@ Language server for GLSL (OpenGL Shading Language).
 
 - [Features](#features)
 - [Installation](#installation)
+    - [Building from Source](#building-from-source)
 - [Usage](#usage)
     - [Neovim](#neovim)
+    - [Visual Studio Code](#visual-studio-code)
 
 
 ## Features
@@ -31,6 +33,15 @@ Language server for GLSL (OpenGL Shading Language).
 
 
 ## Installation
+
+We provide precompiled binaries for Linux, MacOS and Windows on the
+[Releases](https://github.com/nolanderc/glsl_analyzer/releases) page.
+Make sure to copy it somewhere under your `PATH` environment variable (e.g.
+`~/.local/bin` on Linux).
+
+
+### Building from Source
+
 
 ```sh
 zig build install -Doptimize=ReleaseSafe --prefix ~/.local/
@@ -60,3 +71,13 @@ glsl_analyzer --port <PORT>
 ```lua
 require'lspconfig'.glsl_analyzer.setup{}
 ```
+
+### Visual Studio Code
+
+Install the
+[`glsl-analyzer`](https://marketplace.visualstudio.com/items?itemName=nolanderc.glsl-analyzer)
+extionsion from the marketplace.
+
+> Note: the extension does not automatically download the `glsl_analyzer`
+> binary. You can find it on the
+> [Releases](https://github.com/nolanderc/glsl_analyzer/releases) page.

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -e
+
 targets=(
     x86_64-linux-musl
     aarch64-linux-musl
@@ -15,5 +17,5 @@ for target in ${targets[@]}; do
     echo "building $target..."
     mkdir -p "zig-out/$target"
     zig build -Dtarget=$target -Doptimize=ReleaseSafe --prefix "zig-out/$target"
-    zip -r "zig-out/archives/$target.zip" zig-out/$target/*
+    (cd "zig-out/$target/" && zip -r "../archives/$target.zip" *)
 done
