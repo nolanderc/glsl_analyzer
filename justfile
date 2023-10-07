@@ -1,5 +1,6 @@
 
 set dotenv-load
+set positional-arguments
 
 target := env_var_or_default("TARGET", "native")
 optimize := "Debug"
@@ -13,7 +14,7 @@ watch command="build" *args='':
     watchexec -e zig,py,vert,frag,comp -c -- 'just {{command}} {{args}} && echo ok'
 
 build *ARGS:
-    zig build --summary none {{flags}} {{ARGS}}
+    zig build --summary none {{flags}} "$@"
 
 test:
     zig build test --summary failures {{flags}}
@@ -37,3 +38,5 @@ stderr:
 generate-spec:
     cd spec && just
 
+release:
+    ./release.sh
