@@ -9,14 +9,11 @@ targets=(
     aarch64-windows
 )
 
-for target in ${targets[@]}; do
-    mkdir -p "zig-out/$target"
-    zig build -Dtarget=$target -Doptimize=ReleaseSafe --prefix "zig-out/$target" &
-done
-
-wait
-
 mkdir -p "zig-out/archives"
+
 for target in ${targets[@]}; do
+    echo "building $target..."
+    mkdir -p "zig-out/$target"
+    zig build -Dtarget=$target -Doptimize=ReleaseSafe --prefix "zig-out/$target"
     zip -r "zig-out/archives/$target.zip" zig-out/$target/*
 done
