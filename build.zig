@@ -49,7 +49,11 @@ fn attachModules(step: *std.Build.CompileStep) !void {
     } });
 
     const options = b.addOptions();
-    const build_root_path = try std.fs.path.resolve(b.allocator, &.{b.build_root.path orelse "."});
+    const build_root_path = try std.fs.path.resolve(
+        b.allocator,
+        &.{b.build_root.path orelse "."},
+    );
     options.addOption([]const u8, "build_root", build_root_path);
+    options.addOption([]const u8, "version", b.exec(&.{ "git", "describe", "--tags" }));
     step.addOptions("build_options", options);
 }

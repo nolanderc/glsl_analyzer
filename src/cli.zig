@@ -6,6 +6,7 @@ pub const Arguments = struct {
     channel: ChannelKind = .stdio,
     client_pid: ?c_int = null,
     dev_mode: ?[]const u8 = null,
+    version: bool = false,
 
     pub const ChannelKind = union(enum) {
         stdio: void,
@@ -25,9 +26,14 @@ pub const Arguments = struct {
         \\
     ;
 
-    fn printUsage() noreturn {
-        std.io.getStdErr().writer().writeAll(usage) catch {};
+    fn printHelp() noreturn {
+        std.io.getStdOut().writer().writeAll(usage) catch {};
         std.process.exit(1);
+    }
+
+    fn printVersion() noreturn {
+        std.io.getStdOut().writer().writeAll(@import("build_options").version) catch {};
+        std.process.exit(0);
     }
 
     fn fail(comptime fmt: []const u8, args: anytype) noreturn {
@@ -49,7 +55,11 @@ pub const Arguments = struct {
             const extra_value = if (name_end == arg.len) null else arg[name_end + 1 ..];
 
             if (isAny(name, &.{ "--help", "-h" })) {
-                printUsage();
+                printHelp();
+            }
+
+            if (isAny(name, &.{ "--version", "-v" })) {
+                printVersion();
             }
 
             if (isAny(name, &.{"--stdio"})) {
