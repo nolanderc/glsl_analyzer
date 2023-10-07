@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const build_options = @import("build_options");
 
 const util = @import("util.zig");
@@ -12,20 +13,25 @@ const cli = @import("cli.zig");
 const analysis = @import("analysis.zig");
 
 pub const std_options = struct {
-    pub const log_level = .debug;
+    pub const log_level = .warn;
 };
 
 fn enableDevelopmentMode(stderr_target: []const u8) !void {
-    // redirect stderr to the build root
-    const O = std.os.O;
-    const S = std.os.S;
-    const new_stderr = try std.os.open(
-        stderr_target,
-        O.WRONLY | O.CREAT | O.TRUNC,
-        S.IRUSR | S.IWUSR | S.IRGRP | S.IROTH,
-    );
-    try std.os.dup2(new_stderr, std.os.STDERR_FILENO);
-    std.os.close(new_stderr);
+    if (builtin.os.tag == .linux) {
+        // redirect stderr to the build root
+        const O = std.os.O;
+        const S = std.os.S;
+        const new_stderr = try std.os.open(
+            stderr_target,
+            O.WRONLY | O.CREAT | O.TRUNC,
+            S.IRUSR | S.IWUSR | S.IRGRP | S.IROTH,
+        );
+        try std.os.dup2(new_stderr, std.os.STDERR_FILENO);
+        std.os.close(new_stderr);
+    } else {
+        std.log.warn("development mode not available on {s}", .{@tagName(builtin.os.tag)});
+        return error.UnsupportedPlatform;
+    }
 }
 
 pub fn main() !void {
@@ -39,7 +45,6 @@ pub fn main() !void {
 
     if (args.dev_mode) |stderr_target| {
         try enableDevelopmentMode(stderr_target);
-
         std.debug.print("\x1b[2J", .{}); // clear screen
         std.log.info("entered development mode '{s}'", .{stderr_target});
     }
@@ -50,6 +55,10 @@ pub fn main() !void {
             .stdin = std.io.getStdIn(),
         } },
         .socket => |port| blk: {
+            if (builtin.os.tag == .wasi) {
+                return error.UnsupportedPlatform;
+            }
+
             var server = std.net.StreamServer.init(.{});
             defer server.deinit();
 

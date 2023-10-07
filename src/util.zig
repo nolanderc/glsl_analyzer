@@ -18,7 +18,7 @@ pub fn JsonEnumAsIntMixin(comptime Self: type) type {
 }
 
 pub fn getJsonErrorContext(diagnostics: std.json.Diagnostics, bytes: []const u8) []const u8 {
-    const offset = diagnostics.getByteOffset();
+    const offset: usize = @intCast(diagnostics.getByteOffset());
     const start = std.mem.lastIndexOfScalar(u8, bytes[0..offset], '\n') orelse 0;
     const end = std.mem.indexOfScalarPos(u8, bytes, offset, '\n') orelse bytes.len;
     const line = bytes[@max(start, offset -| 40)..@min(end, offset +| 40)];
