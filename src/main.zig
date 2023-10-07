@@ -497,17 +497,35 @@ pub const Dispatch = struct {
 
         std.log.debug("complete: {} {s}", .{ params.value.position, params.value.textDocument.uri });
 
+        const document = try getDocumentOrFail(state, request, params.value.textDocument);
+
         var completions = std.ArrayList(lsp.CompletionItem).init(state.allocator);
         defer completions.deinit();
 
         var symbol_arena = std.heap.ArenaAllocator.init(state.allocator);
         defer symbol_arena.deinit();
 
-        const document = try getDocumentOrFail(state, request, params.value.textDocument);
+        try completionsAtPosition(
+            state,
+            document,
+            params.value.position,
+            &completions,
+            symbol_arena.allocator(),
+        );
 
+        try state.success(request.id, completions.items);
+    }
+
+    fn completionsAtPosition(
+        state: *State,
+        document: *Workspace.Document,
+        position: lsp.Position,
+        completions: *std.ArrayList(lsp.CompletionItem),
+        arena: std.mem.Allocator,
+    ) !void {
         var has_fields = false;
 
-        if (try document.nodeBeforeCursor(params.value.position)) |node| {
+        if (try document.nodeBeforeCursor(position)) |node| {
             var symbols = std.ArrayList(analysis.Reference).init(state.allocator);
             defer symbols.deinit();
 
@@ -524,11 +542,9 @@ pub const Dispatch = struct {
                 const symbol_type = try analysis.typeOf(symbol);
 
                 const type_signature = if (symbol_type) |typ|
-                    try std.fmt.allocPrint(
-                        symbol_arena.allocator(),
-                        "{}",
-                        .{typ.format(parsed.tree, symbol.document.source())},
-                    )
+                    try std.fmt.allocPrint(arena, "{}", .{
+                        typ.format(parsed.tree, symbol.document.source()),
+                    })
                 else
                     null;
 
@@ -537,6 +553,7 @@ pub const Dispatch = struct {
                     .labelDetails = .{
                         .detail = type_signature,
                     },
+                    .detail = type_signature,
                     .kind = switch (parsed.tree.tag(symbol.parent_declaration)) {
                         .struct_specifier => .class,
                         .function_declaration => .function,
@@ -556,8 +573,6 @@ pub const Dispatch = struct {
         if (!has_fields) {
             try completions.appendSlice(state.workspace.builtin_completions);
         }
-
-        try state.success(request.id, completions.items);
     }
 
     pub const HoverParams = struct {
@@ -572,21 +587,51 @@ pub const Dispatch = struct {
         std.log.debug("hover: {} {s}", .{ params.value.position, params.value.textDocument.uri });
 
         const document = try getDocumentOrFail(state, request, params.value.textDocument);
-        const word = document.wordUnderCursor(params.value.position);
 
+        const word = document.wordUnderCursor(params.value.position);
         std.log.debug("hover word: '{'}'", .{std.zig.fmtEscapes(word)});
 
-        const contents = for (state.workspace.builtin_completions) |*completion| {
+        var completions = std.ArrayList(lsp.CompletionItem).init(state.allocator);
+        defer completions.deinit();
+
+        var symbol_arena = std.heap.ArenaAllocator.init(state.allocator);
+        defer symbol_arena.deinit();
+
+        try completionsAtPosition(
+            state,
+            document,
+            params.value.position,
+            &completions,
+            symbol_arena.allocator(),
+        );
+
+        var text = std.ArrayList(u8).init(state.allocator);
+        defer text.deinit();
+
+        for (completions.items) |*completion| {
             if (std.mem.eql(u8, completion.label, word)) {
-                if (completion.documentation) |*doc| break doc;
-                std.log.debug("item without documentation: '{'}'", .{std.zig.fmtEscapes(completion.label)});
+                if (text.items.len != 0) {
+                    try text.appendSlice("\n\n---\n\n");
+                }
+                if (completion.detail) |detail| {
+                    try text.writer().print("```glsl\n{s}\n```", .{detail});
+                }
+                if (completion.documentation) |docs| {
+                    try text.appendSlice("\n\n");
+                    try text.appendSlice(docs.value);
+                }
             }
-        } else {
+        }
+
+        if (text.items.len == 0) {
             return state.success(request.id, null);
-        };
+        }
 
         try state.success(request.id, .{
-            .contents = contents,
+            .contents = lsp.MarkupContent{
+                .kind = .markdown,
+                .value = text.items,
+            },
         });
     }
 

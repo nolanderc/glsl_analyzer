@@ -56,16 +56,11 @@ pub const Function = struct {
 const compressed_bytes = @embedFile("glsl_spec.json.zlib");
 
 pub fn load(allocator: std.mem.Allocator) !@This() {
-    const start = try std.time.Instant.now();
-
     var compressed_stream = std.io.fixedBufferStream(compressed_bytes);
     var decompress_stream = try std.compress.zlib.decompressStream(allocator, compressed_stream.reader());
     defer decompress_stream.deinit();
 
     const bytes = try decompress_stream.reader().readAllAlloc(allocator, 16 << 20);
-
-    const end = try std.time.Instant.now();
-    std.debug.print("load spec: {}ms\n", .{end.since(start) / std.time.ns_per_ms});
 
     var diagnostic = std.json.Diagnostics{};
     var scanner = std.json.Scanner.initCompleteInput(allocator, bytes);
