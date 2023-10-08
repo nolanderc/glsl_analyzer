@@ -46,9 +46,12 @@ pub fn main() !void {
     const args = try cli.Arguments.parse(allocator);
 
     if (args.dev_mode) |stderr_target| {
-        try enableDevelopmentMode(stderr_target);
-        std.debug.print("\x1b[2J", .{}); // clear screen
-        std.log.info("entered development mode '{s}'", .{stderr_target});
+        if (enableDevelopmentMode(stderr_target)) {
+            std.debug.print("\x1b[2J", .{}); // clear screen
+            std.log.info("entered development mode '{s}'", .{stderr_target});
+        } else |err| {
+            std.log.warn("couldn't enable development mode: {s}", .{@errorName(err)});
+        }
     }
 
     var channel: Channel = switch (args.channel) {
