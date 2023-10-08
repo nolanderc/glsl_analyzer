@@ -24,7 +24,17 @@ Language server for GLSL (OpenGL Shading Language).
 - Support for `#include`
 - Formatter
 
-![](resources/screenshot.png)
+
+### Screenshots
+
+#### Completion
+![completion](https://github.com/nolanderc/glsl_analyzer-vscode/blob/main/screenshots/completion.gif)
+
+#### Formatting
+![formatting](https://github.com/nolanderc/glsl_analyzer-vscode/blob/main/screenshots/formatting.gif)
+
+#### Goto-Definition
+![goto definition](https://github.com/nolanderc/glsl_analyzer-vscode/blob/main/screenshots/goto-definition.gif)
 
 
 ### In the pipeline
