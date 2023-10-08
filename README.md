@@ -76,8 +76,4 @@ require'lspconfig'.glsl_analyzer.setup{}
 
 Install the
 [`glsl-analyzer`](https://marketplace.visualstudio.com/items?itemName=nolanderc.glsl-analyzer)
-extionsion from the marketplace.
-
-> Note: the extension does not automatically download the `glsl_analyzer`
-> binary. You can find it on the
-> [Releases](https://github.com/nolanderc/glsl_analyzer/releases) page.
+extionsion from the marketplace. It will automatically download the latest precompiled binary for your platform.
