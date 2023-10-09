@@ -1201,6 +1201,8 @@ const type_qualifier_first = TokenSet.initMany(&.{
     .keyword_noperspective,
     .keyword_invariant,
     .keyword_precise,
+    .keyword_varying,
+    .keyword_attribute,
 });
 
 fn typeQualifierSingle(p: *Parser) void {
@@ -1256,6 +1258,8 @@ fn typeQualifierSingle(p: *Parser) void {
         .keyword_invariant => p.advance(),
         // precise_qualifier
         .keyword_precise => p.advance(),
+
+        .keyword_varying, .keyword_attribute => p.advance(),
 
         .keyword_subroutine => {
             const m = p.open();

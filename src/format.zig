@@ -341,6 +341,10 @@ fn formatNode(tree: parse.Tree, current: usize, writer: anytype) !void {
                     }
                 }
             }
+
+            if (tag == .invalid) {
+                writer.writeSpace();
+            }
         },
     }
 }
@@ -542,6 +546,14 @@ test "format if/else" {
 test "format function prototype" {
     try expectIsFormatted(
         \\int add(int, int);
+        \\
+    );
+}
+
+test "format qualifiers" {
+    try expectIsFormatted(
+        \\attribute vec4 color;
+        \\varying vec4 color;
         \\
     );
 }
