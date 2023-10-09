@@ -229,7 +229,6 @@ pub const Tree = struct {
         const nodes = &self.nodes;
         for (nodes.items(.tag), nodes.items(.span), 0..) |tag_, span, index| {
             if (!tag_.isSyntax()) continue;
-            std.debug.assert(span.start != span.end);
             @memset(nodes.items(.parent)[span.start..span.end], @intCast(index));
         }
     }

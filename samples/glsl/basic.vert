@@ -1,6 +1,7 @@
 #version 330
 
 #include "common.glsl"
+#include "empty.glsl"
 
 layout(location = 0) in vec3 position;
 
