@@ -220,6 +220,8 @@ pub const Node = struct {
 
 pub const Tree = struct {
     nodes: std.MultiArrayList(Node) = .{},
+    /// Index of the root node. Any nodes after this are either comments or preprocessors.
+    root: u32,
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         self.nodes.deinit(allocator);
@@ -242,7 +244,7 @@ pub const Tree = struct {
         return self.nodes.items(.parent)[index];
     }
 
-    pub fn token(self: @This(), index: usize) Span {
+    pub fn token(self: @This(), index: usize) Token {
         return self.nodes.items(.span)[index];
     }
 
@@ -251,23 +253,15 @@ pub const Tree = struct {
     }
 
     pub fn rootIndex(self: @This()) u32 {
-        return @intCast(self.nodes.len - 1);
+        return self.root;
     }
 
-    pub fn nodeSpans(self: @This(), spans: []Span) void {
-        std.debug.assert(spans.len == self.nodes.len);
+    pub fn ignoredStart(self: @This()) u32 {
+        return self.root + 1;
+    }
 
-        for (spans, 0..) |*span, index| {
-            const node = self.nodes.get(index);
-            if (node.getToken()) |tok| span.* = tok;
-            if (node.getRange()) |range| {
-                std.debug.assert(range.end < index);
-                span.* = .{
-                    .start = spans[range.start].start,
-                    .end = spans[range.end].end,
-                };
-            }
-        }
+    pub fn ignored(self: @This()) []Token {
+        return self.nodes.items(.span)[self.root + 1 ..];
     }
 
     pub fn nodeSpan(self: @This(), node: u32) Span {
@@ -389,7 +383,7 @@ pub const Parser = struct {
 
     deferred_error: ?Error = null,
 
-    tree: Tree = .{},
+    tree: Tree = .{ .root = undefined },
     stack: std.MultiArrayList(Node) = .{},
 
     options: ParseOptions,
@@ -416,11 +410,28 @@ pub const Parser = struct {
         if (self.deferred_error) |err| return err;
 
         try self.tree.nodes.append(self.allocator, self.stack.pop());
-
         self.tree.assignParents();
 
-        const tree = self.tree;
-        self.tree = .{};
+        var tree = self.tree;
+        self.tree = .{ .root = undefined };
+
+        tree.root = @intCast(tree.nodes.len - 1);
+
+        if (self.options.ignored) |ignored| {
+            const ignored_start = tree.nodes.len;
+            try tree.nodes.resize(self.allocator, tree.nodes.len + ignored.items.len);
+            for (
+                ignored.items,
+                tree.nodes.items(.tag)[ignored_start..],
+                tree.nodes.items(.span)[ignored_start..],
+                tree.nodes.items(.parent)[ignored_start..],
+            ) |token, *tag, *span, *parent| {
+                tag.* = if (self.tokenizer.source[token.start] == '#') .preprocessor else .comment;
+                span.* = token;
+                parent.* = tree.root;
+            }
+        }
+
         return tree;
     }
 

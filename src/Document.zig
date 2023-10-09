@@ -171,7 +171,7 @@ pub fn parseTree(self: *@This()) !*const CompleteParseTree {
 pub const CompleteParseTree = struct {
     arena_state: std.heap.ArenaAllocator.State,
     tree: parse.Tree,
-    ignored: std.ArrayListUnmanaged(parse.Token),
+    ignored: []parse.Token,
     diagnostics: std.ArrayListUnmanaged(parse.Diagnostic),
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
@@ -185,7 +185,8 @@ pub const CompleteParseTree = struct {
         const allocator = arena.allocator();
 
         var diagnostics = std.ArrayList(parse.Diagnostic).init(allocator);
-        var ignored = std.ArrayList(parse.Token).init(allocator);
+        var ignored = std.ArrayList(parse.Token).init(parent_allocator);
+        defer ignored.deinit();
 
         const tree = try parse.parse(allocator, text, .{
             .ignored = &ignored,
@@ -195,7 +196,7 @@ pub const CompleteParseTree = struct {
         return .{
             .arena_state = arena.state,
             .tree = tree,
-            .ignored = ignored.moveToUnmanaged(),
+            .ignored = tree.ignored(),
             .diagnostics = diagnostics.moveToUnmanaged(),
         };
     }
