@@ -10,7 +10,7 @@ allocator: std.mem.Allocator,
 arena_state: std.heap.ArenaAllocator.State,
 spec: Spec,
 builtin_completions: []const lsp.CompletionItem,
-documents: std.StringHashMapUnmanaged(Document) = .{},
+documents: std.StringHashMapUnmanaged(*Document) = .{},
 
 pub fn init(allocator: std.mem.Allocator) !@This() {
     var arena = std.heap.ArenaAllocator.init(allocator);
@@ -30,7 +30,9 @@ pub fn init(allocator: std.mem.Allocator) !@This() {
 pub fn deinit(self: *Workspace) void {
     var entries = self.documents.iterator();
     while (entries.next()) |entry| {
-        entry.value_ptr.deinit();
+        const document = entry.value_ptr.*;
+        document.deinit();
+        self.allocator.destroy(document);
         self.allocator.free(entry.key_ptr.*);
     }
     self.documents.deinit(self.allocator);
@@ -38,7 +40,7 @@ pub fn deinit(self: *Workspace) void {
 }
 
 pub fn getDocument(self: *Workspace, document: lsp.TextDocumentIdentifier) ?*Document {
-    return self.documents.getPtr(document.uri);
+    return self.documents.get(document.uri);
 }
 
 pub fn getOrCreateDocument(
@@ -48,14 +50,19 @@ pub fn getOrCreateDocument(
     const entry = try self.documents.getOrPut(self.allocator, document.uri);
     if (!entry.found_existing) {
         errdefer self.documents.removeByPtr(entry.key_ptr);
+
+        const new_document = try self.allocator.create(Document);
+        errdefer self.allocator.destroy(new_document);
+
         entry.key_ptr.* = try self.allocator.dupe(u8, document.uri);
-        entry.value_ptr.* = .{
+        new_document.* = .{
             .uri = entry.key_ptr.*,
             .workspace = self,
             .version = document.version,
         };
+        entry.value_ptr.* = new_document;
     }
-    return entry.value_ptr;
+    return entry.value_ptr.*;
 }
 
 pub fn getOrLoadDocument(
@@ -71,15 +78,19 @@ pub fn getOrLoadDocument(
         const contents = try std.fs.cwd().readFileAlloc(self.allocator, path, max_megabytes << 20);
         errdefer self.allocator.free(contents);
 
+        const new_document = try self.allocator.create(Document);
+        errdefer self.allocator.destroy(new_document);
+
         entry.key_ptr.* = try self.allocator.dupe(u8, document.uri);
-        entry.value_ptr.* = .{
+        new_document.* = .{
             .uri = entry.key_ptr.*,
             .workspace = self,
             .version = null,
             .contents = std.ArrayListUnmanaged(u8).fromOwnedSlice(contents),
         };
+        entry.value_ptr.* = new_document;
     }
-    return entry.value_ptr;
+    return entry.value_ptr.*;
 }
 
 fn uriPath(uri: []const u8) ![]const u8 {
