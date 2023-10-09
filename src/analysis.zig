@@ -302,12 +302,12 @@ pub fn visibleSymbols(
         try visibleSymbolsTree(document, tree.parent(node) orelse node, symbols);
 
         if (std.fs.path.dirname(document.uri)) |document_dir| {
-            const node_start = tree.nodeSpanExtreme(node, .start);
+            const node_end = tree.nodeSpanExtreme(node, .end);
 
             // parse include directives
             for (parse_tree.ignored.items) |ignored| {
                 // only process directives before the node:
-                if (ignored.end > node_start) break;
+                if (ignored.end > node_end) break;
 
                 const line = document.source()[ignored.start..ignored.end];
                 const directive = parse.parsePreprocessorDirective(line) orelse continue;
@@ -341,6 +341,9 @@ pub fn visibleSymbols(
 }
 
 fn visibleSymbolsTree(document: *Document, start_node: u32, symbols: *std.ArrayList(Reference)) !void {
+    std.log.debug("visibleSymbolsTree({s})", .{document.uri});
+    std.log.debug("done visibleSymbolsTree({s})", .{document.uri});
+
     const parse_tree = try document.parseTree();
     const tree = parse_tree.tree;
 

@@ -289,6 +289,7 @@ pub const Tree = struct {
             const span = spans[current];
             const value = @field(span, @tagName(extreme));
             if (tags[current].isToken()) return value;
+            if (span.start == span.end) return 0;
             current = if (extreme == .start) value else value - 1;
         }
     }
