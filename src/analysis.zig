@@ -605,7 +605,7 @@ fn findCursors(document: *Document) !std.StringArrayHashMap(Cursor) {
     for (0..tree.nodes.len) |index| {
         const node = tree.nodes.get(index);
         const token = node.getToken() orelse continue;
-        for (parsed.ignored.items) |cursor| {
+        for (parsed.ignored) |cursor| {
             if (cursor.end == token.start) {
                 const result = try cursors.getOrPut(
                     document.source()[cursor.start..cursor.end],
