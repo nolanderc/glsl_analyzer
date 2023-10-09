@@ -11,6 +11,7 @@ const Request = rpc.Request;
 const Workspace = @import("Workspace.zig");
 const cli = @import("cli.zig");
 const analysis = @import("analysis.zig");
+const parse = @import("parse.zig");
 
 pub const std_options = struct {
     pub const log_level = .debug;
@@ -550,8 +551,10 @@ pub const Dispatch = struct {
                     try std.fmt.allocPrint(arena, "{}", .{
                         typ.format(parsed.tree, symbol.document.source()),
                     })
-                else
-                    null;
+                else if (parsed.tree.tag(symbol.node) == .preprocessor) blk: {
+                    const span = symbol.span();
+                    break :blk symbol.document.source()[span.start..span.end];
+                } else null;
 
                 try completions.append(.{
                     .label = symbol.name(),
@@ -562,6 +565,7 @@ pub const Dispatch = struct {
                     .kind = switch (parsed.tree.tag(symbol.parent_declaration)) {
                         .struct_specifier => .class,
                         .function_declaration => .function,
+                        .preprocessor => .constant,
                         else => blk: {
                             if (parsed.tree.parent(symbol.parent_declaration)) |grandparent| {
                                 if (parsed.tree.tag(grandparent) == .field_declaration_list) {
@@ -663,7 +667,7 @@ pub const Dispatch = struct {
             parsed.tree,
             document.contents.items,
             buffer.writer(),
-            .{ .ignored = parsed.ignored.items },
+            .{ .ignored = parsed.ignored },
         );
 
         try state.success(request.id, .{

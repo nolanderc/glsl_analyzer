@@ -16,10 +16,12 @@ pub const Reference = struct {
 
     pub fn span(self: @This()) parse.Span {
         const parsed = &self.document.parse_tree.?;
-        return parsed.tree.nodes.items(.span)[self.node];
+        return parsed.tree.nodeSpan(self.node);
     }
 
     pub fn name(self: @This()) []const u8 {
+        const parsed = &self.document.parse_tree.?;
+        if (nodeName(parsed.tree, self.node, self.document.source())) |n| return n;
         const s = self.span();
         return self.document.source()[s.start..s.end];
     }
@@ -174,10 +176,7 @@ pub fn findDefinition(document: *Document, node: u32, references: *std.ArrayList
     const parse_tree = try document.parseTree();
     const tree = parse_tree.tree;
 
-    if (tree.tag(node) != .identifier) return;
-
-    const identifier = tree.token(node);
-    const name = document.source()[identifier.start..identifier.end];
+    const name = nodeName(tree, node, document.source()) orelse return;
 
     var symbols = std.ArrayList(Reference).init(allocator);
     defer symbols.deinit();
@@ -185,9 +184,8 @@ pub fn findDefinition(document: *Document, node: u32, references: *std.ArrayList
     try visibleSymbols(document, node, &symbols);
 
     for (symbols.items) |symbol| {
-        const source = symbol.document.source();
         const parsed = try symbol.document.parseTree();
-        if (isExpectedIdentifier(parsed.tree, symbol.node, source, name)) {
+        if (std.mem.eql(u8, name, symbol.name())) {
             try references.append(symbol);
             if (!inFileRoot(parsed.tree, symbol.parent_declaration)) break;
         }
@@ -302,10 +300,13 @@ pub fn visibleSymbols(
         try visibleSymbolsTree(document, tree.parent(node) orelse node, symbols);
 
         if (std.fs.path.dirname(document.uri)) |document_dir| {
-            const node_end = tree.nodeSpanExtreme(node, .end);
+            const node_end = if (tree.tag(node) == .file)
+                std.math.maxInt(u32)
+            else
+                tree.nodeSpanExtreme(node, .start);
 
             // parse include directives
-            for (parse_tree.ignored.items) |ignored| {
+            for (parse_tree.ignored, parse_tree.tree.ignoredStart()..) |ignored, ignored_index| {
                 // only process directives before the node:
                 if (ignored.end > node_end) break;
 
@@ -333,7 +334,13 @@ pub fn visibleSymbols(
 
                         try stack.append(.{ .document = included_document, .node = null });
                     },
-                    else => continue,
+                    .define => {
+                        try symbols.append(Reference{
+                            .document = document,
+                            .node = @intCast(ignored_index),
+                            .parent_declaration = @intCast(ignored_index),
+                        });
+                    },
                 }
             }
         }
@@ -341,9 +348,6 @@ pub fn visibleSymbols(
 }
 
 fn visibleSymbolsTree(document: *Document, start_node: u32, symbols: *std.ArrayList(Reference)) !void {
-    std.log.debug("visibleSymbolsTree({s})", .{document.uri});
-    std.log.debug("done visibleSymbolsTree({s})", .{document.uri});
-
     const parse_tree = try document.parseTree();
     const tree = parse_tree.tree;
 
@@ -458,10 +462,22 @@ fn findVisibleSymbols(
     }
 }
 
-fn isExpectedIdentifier(tree: Tree, index: u32, source: []const u8, name: []const u8) bool {
-    const node = tree.nodes.get(index);
-    const token = if (node.tag == .identifier) node.span else return false;
-    return std.mem.eql(u8, source[token.start..token.end], name);
+fn nodeName(tree: Tree, node: u32, source: []const u8) ?[]const u8 {
+    switch (tree.tag(node)) {
+        .identifier => {
+            const token = tree.token(node);
+            return source[token.start..token.end];
+        },
+        .preprocessor => {
+            const token = tree.token(node);
+            const text = source[token.start..token.end];
+            switch (parse.parsePreprocessorDirective(text) orelse return null) {
+                .define => |define| return text[define.name.start..define.name.end],
+                else => return null,
+            }
+        },
+        else => return null,
+    }
 }
 
 test "find definition local variable" {
