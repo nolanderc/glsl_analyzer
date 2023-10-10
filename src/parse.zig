@@ -820,10 +820,13 @@ fn statement(p: *Parser) void {
             block(p);
         },
         .keyword_case => {
+            p.advance();
             expression(p);
+            p.expect(.@":");
             return p.close(m, .case_label);
         },
         .keyword_default => {
+            p.advance();
             p.expect(.@":");
             return p.close(m, .default_label);
         },
@@ -1787,6 +1790,42 @@ test "parse logical operator" {
         \\    ;
         \\
     , buffer.items);
+}
+
+test "parse switch" {
+    // From: https://github.com/nolanderc/glsl_analyzer/issues/7
+    try expectParsesOkay(
+        \\#version 430 core
+        \\
+        \\void main() {
+        \\    switch (i) {
+        \\         case 1: break;
+        \\    }
+        \\}
+    );
+}
+
+fn expectParsesOkay(source: []const u8) !void {
+    var diagnostics = std.ArrayList(Diagnostic).init(std.testing.allocator);
+    defer diagnostics.deinit();
+
+    var tree = try parse(std.testing.allocator, source, .{ .diagnostics = &diagnostics });
+    defer tree.deinit(std.testing.allocator);
+
+    errdefer std.log.err("tree:\n{}", .{tree.format(source)});
+
+    if (diagnostics.items.len != 0) {
+        for (diagnostics.items) |diagnostic| {
+            std.log.err("{s}", .{diagnostic.message});
+        }
+        return error.FoundDiagnostics;
+    }
+
+    for (tree.nodes.items(.tag)) |tag| {
+        if (tag == .invalid) {
+            return error.FoundInvalidSyntaxNode;
+        }
+    }
 }
 
 test {
