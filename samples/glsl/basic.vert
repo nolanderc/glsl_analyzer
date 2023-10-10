@@ -5,6 +5,15 @@
 
 layout(location = 0) in vec3 position;
 
+in Inputs {
+    vec2 tex_coords;
+} inputs;
+
+out Outputs {
+    vec4 frag_pos;
+    vec2 tex_coords;
+} outputs;
+
 void main() {
     const vec4 color = vec4(0.3, 0.5 + 3, -3, 1);
 
