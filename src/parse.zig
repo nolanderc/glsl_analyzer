@@ -1426,6 +1426,10 @@ pub const Tokenizer = struct {
                 else => return self.token(.@"/", i + 1),
             },
             '%' => switch (getOrZero(text, i + 1)) {
+                '=' => return self.token(.@"%=", i + 2),
+                else => return self.token(.@"%", i + 1),
+            },
+            '&' => switch (getOrZero(text, i + 1)) {
                 '=' => return self.token(.@"&=", i + 2),
                 '&' => return self.token(.@"&&", i + 2),
                 else => return self.token(.@"&", i + 1),
@@ -1494,7 +1498,10 @@ pub const Tokenizer = struct {
                 }
 
                 while (i < N and !valid_char.isSet(text[i])) i += 1;
-                std.debug.assert(i != self.offset);
+
+                if (i == self.offset) {
+                    std.debug.panic("encountered empty token at position {}: {c}", .{ i, text[i] });
+                }
 
                 return self.token(.unknown, i);
             },
@@ -1748,6 +1755,35 @@ test "parse infix op" {
         \\        number '1'
         \\        +
         \\        number '2'
+        \\    ;
+        \\
+    , buffer.items);
+}
+
+test "parse logical operator" {
+    const source =
+        \\bool x = true && true;
+    ;
+
+    var tree = try parse(std.testing.allocator, source, .{});
+    defer tree.deinit(std.testing.allocator);
+
+    var buffer = std.ArrayList(u8).init(std.testing.allocator);
+    defer buffer.deinit();
+
+    try buffer.writer().print("{}", .{tree.format(source)});
+
+    try std.testing.expectEqualStrings(
+        \\file
+        \\  declaration
+        \\    identifier 'bool'
+        \\    variable_declaration
+        \\      identifier 'x'
+        \\      =
+        \\      infix
+        \\        keyword_true 'true'
+        \\        &&
+        \\        keyword_true 'true'
         \\    ;
         \\
     , buffer.items);
