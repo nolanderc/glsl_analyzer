@@ -458,8 +458,19 @@ fn findVisibleSymbols(
             var child = children.end;
             while (child > children.start) {
                 child -= 1;
+
+                var check_children = options.check_children;
+                if (syntax.BlockDeclaration.tryExtract(tree, child)) |block| {
+                    if (block.get(.variable, tree) == null) {
+                        // interface block without name:
+                        check_children = true;
+                    } else {
+                        check_children = false;
+                    }
+                }
+
                 try findVisibleSymbols(document, tree, child, symbols, .{
-                    .check_children = options.check_children or tag == .block_declaration,
+                    .check_children = check_children,
                     .parent_declaration = switch (tag) {
                         .declaration,
                         .parameter,
