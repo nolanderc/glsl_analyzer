@@ -7,20 +7,20 @@ optimize := "Debug"
 
 flags := "-freference-trace=10 -Dtarget="+target+" -Doptimize="+optimize
 
+build *ARGS:
+    zig build --summary none {{flags}} "$@"
+
 run *ARGS:
     zig build run --summary none {{flags}} -- {{ARGS}}
 
-watch command="build" *args='':
-    watchexec -e zig,py,vert,frag,comp -c -- 'just {{command}} {{args}} && echo ok'
-
-build *ARGS:
-    zig build --summary none {{flags}} "$@"
+watch *ARGS:
+    watchexec -e zig,py,vert,frag,comp -c -- "just ${*@Q} && echo ok"
 
 test:
     zig build test --summary failures {{flags}}
 
-test-file path:
-    zig test {{flags}} '{{path}}'
+test-file *ARGS:
+    zig test {{flags}} "$@"
 
 test-lldb:
     zig build -Dinstall-tests
