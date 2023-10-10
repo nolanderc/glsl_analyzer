@@ -30,6 +30,7 @@ pub const Reference = struct {
 pub const Type = struct {
     qualifiers: ?syntax.QualifierList = null,
     specifier: ?syntax.TypeSpecifier = null,
+    block_fields: ?syntax.FieldList = null,
     arrays: ?syntax.ListIterator(syntax.Array) = null,
     parameters: ?syntax.ParameterList = null,
 
@@ -99,6 +100,10 @@ pub fn typeOf(reference: Reference) !?Type {
             return .{
                 .qualifiers = syntax_node.get(.qualifiers, tree),
                 .specifier = syntax_node.get(.specifier, tree),
+                .block_fields = if (@TypeOf(syntax_node) == syntax.BlockDeclaration)
+                    syntax_node.get(.fields, tree)
+                else
+                    null,
                 .arrays = blk: {
                     const parent = tree.parent(reference.node) orelse break :blk null;
                     const name = syntax.VariableName.tryExtract(tree, parent) orelse break :blk null;
@@ -244,30 +249,38 @@ pub fn visibleFields(document: *Document, node: u32, symbols: *std.ArrayList(Ref
             const tree = parsed.tree;
 
             const typ = try typeOf(reference) orelse continue;
-            const specifier = typ.specifier orelse continue;
 
-            switch (specifier) {
-                .struct_specifier => |struct_spec| {
-                    const fields = struct_spec.get(.fields, tree) orelse continue;
-                    var iterator = fields.get(tree).iterator();
-                    while (iterator.next(tree)) |field| {
-                        const variables = field.get(.variables, tree) orelse continue;
-                        var variable_iterator = variables.iterator();
-                        while (variable_iterator.next(tree)) |variable| {
-                            const variable_name = variable.get(.name, tree) orelse continue;
-                            const variable_identifier = variable_name.getIdentifier(tree) orelse continue;
-                            try symbols.append(.{
-                                .document = reference.document,
-                                .node = variable_identifier.node,
-                                .parent_declaration = field.node,
-                            });
+            const fields = if (typ.block_fields) |block_fields|
+                block_fields
+            else blk: {
+                const specifier = typ.specifier orelse continue;
+                switch (specifier) {
+                    .struct_specifier => |struct_spec| {
+                        if (struct_spec.get(.fields, tree)) |fields| {
+                            break :blk fields.get(tree);
                         }
-                    }
-                },
-                else => {
-                    const identifier = specifier.underlyingName(tree) orelse continue;
-                    try findDefinition(reference.document, identifier.node, &references);
-                },
+                    },
+                    else => {
+                        const identifier = specifier.underlyingName(tree) orelse continue;
+                        try findDefinition(reference.document, identifier.node, &references);
+                    },
+                }
+                continue;
+            };
+
+            var iterator = fields.iterator();
+            while (iterator.next(tree)) |field| {
+                const variables = field.get(.variables, tree) orelse continue;
+                var variable_iterator = variables.iterator();
+                while (variable_iterator.next(tree)) |variable| {
+                    const variable_name = variable.get(.name, tree) orelse continue;
+                    const variable_identifier = variable_name.getIdentifier(tree) orelse continue;
+                    try symbols.append(.{
+                        .document = reference.document,
+                        .node = variable_identifier.node,
+                        .parent_declaration = field.node,
+                    });
+                }
             }
         }
     }
