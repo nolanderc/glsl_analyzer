@@ -1,4 +1,5 @@
 const std = @import("std");
+const util = @import("util.zig");
 const lsp = @import("lsp.zig");
 const Spec = @import("Spec.zig");
 const parse = @import("parse.zig");
@@ -10,6 +11,8 @@ allocator: std.mem.Allocator,
 arena_state: std.heap.ArenaAllocator.State,
 spec: Spec,
 builtin_completions: []const lsp.CompletionItem,
+
+/// Documents in the workspace, accessed by their path.
 documents: std.StringHashMapUnmanaged(*Document) = .{},
 
 pub fn init(allocator: std.mem.Allocator) !@This() {
@@ -31,32 +34,44 @@ pub fn deinit(self: *Workspace) void {
     var entries = self.documents.iterator();
     while (entries.next()) |entry| {
         const document = entry.value_ptr.*;
+        self.allocator.free(document.path);
+        self.allocator.free(document.uri);
         document.deinit();
         self.allocator.destroy(document);
-        self.allocator.free(entry.key_ptr.*);
     }
     self.documents.deinit(self.allocator);
     self.arena_state.promote(self.allocator).deinit();
 }
 
-pub fn getDocument(self: *Workspace, document: lsp.TextDocumentIdentifier) ?*Document {
-    return self.documents.get(document.uri);
+pub fn getDocument(self: *Workspace, document: lsp.TextDocumentIdentifier) !?*Document {
+    const path = try util.pathFromUri(self.allocator, document.uri);
+    defer self.allocator.free(path);
+    return self.documents.get(path);
 }
 
 pub fn getOrCreateDocument(
     self: *Workspace,
     document: lsp.VersionedTextDocumentIdentifier,
 ) !*Document {
-    const entry = try self.documents.getOrPut(self.allocator, document.uri);
-    if (!entry.found_existing) {
+    const path = try util.pathFromUri(self.allocator, document.uri);
+    errdefer self.allocator.free(path);
+
+    const entry = try self.documents.getOrPut(self.allocator, path);
+    if (entry.found_existing) {
+        self.allocator.free(path);
+    } else {
         errdefer self.documents.removeByPtr(entry.key_ptr);
 
         const new_document = try self.allocator.create(Document);
         errdefer self.allocator.destroy(new_document);
 
-        entry.key_ptr.* = try self.allocator.dupe(u8, document.uri);
+        const uri_clone = try self.allocator.dupe(u8, document.uri);
+        errdefer self.allocator.free(uri_clone);
+
+        entry.key_ptr.* = path;
         new_document.* = .{
-            .uri = entry.key_ptr.*,
+            .uri = uri_clone,
+            .path = path,
             .workspace = self,
             .version = document.version,
         };
@@ -69,21 +84,29 @@ pub fn getOrLoadDocument(
     self: *Workspace,
     document: lsp.TextDocumentIdentifier,
 ) !*Document {
-    const entry = try self.documents.getOrPut(self.allocator, document.uri);
-    if (!entry.found_existing) {
+    const path = try util.pathFromUri(self.allocator, document.uri);
+    errdefer self.allocator.free(path);
+
+    const entry = try self.documents.getOrPut(self.allocator, path);
+    if (entry.found_existing) {
+        self.allocator.free(path);
+    } else {
         errdefer self.documents.removeByPtr(entry.key_ptr);
 
         const max_megabytes = 16;
-        const path = try uriPath(document.uri);
         const contents = try std.fs.cwd().readFileAlloc(self.allocator, path, max_megabytes << 20);
         errdefer self.allocator.free(contents);
 
         const new_document = try self.allocator.create(Document);
         errdefer self.allocator.destroy(new_document);
 
-        entry.key_ptr.* = try self.allocator.dupe(u8, document.uri);
+        const uri_clone = try self.allocator.dupe(u8, document.uri);
+        errdefer self.allocator.free(uri_clone);
+
+        entry.key_ptr.* = path;
         new_document.* = .{
-            .uri = entry.key_ptr.*,
+            .uri = uri_clone,
+            .path = path,
             .workspace = self,
             .version = null,
             .contents = std.ArrayListUnmanaged(u8).fromOwnedSlice(contents),
@@ -91,12 +114,6 @@ pub fn getOrLoadDocument(
         entry.value_ptr.* = new_document;
     }
     return entry.value_ptr.*;
-}
-
-fn uriPath(uri: []const u8) ![]const u8 {
-    const scheme = "file://";
-    if (!std.mem.startsWith(u8, uri, scheme)) return error.UnknownUrlScheme;
-    return uri[scheme.len..];
 }
 
 fn builtinCompletions(arena: std.mem.Allocator, spec: *const Spec) ![]lsp.CompletionItem {

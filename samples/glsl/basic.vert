@@ -2,6 +2,7 @@
 
 #include "common.glsl"
 #include "empty.glsl"
+#include "weird_path:< >.glsl"
 
 layout(location = 0) in vec3 position;
 
