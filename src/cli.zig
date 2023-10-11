@@ -3,10 +3,12 @@ const std = @import("std");
 pub const NAME = "glsl_analyzer";
 
 pub const Arguments = struct {
+    version: bool = false,
     channel: ChannelKind = .stdio,
     client_pid: ?c_int = null,
     dev_mode: ?[]const u8 = null,
-    version: bool = false,
+    parse_file: ?[]const u8 = null,
+    print_ast: bool = false,
 
     pub const ChannelKind = union(enum) {
         stdio: void,
@@ -17,11 +19,16 @@ pub const Arguments = struct {
         "Usage: " ++ NAME ++
         \\ [OPTIONS]
         \\
+        \\LSP:
+        \\     --clientProcessId <PID>  PID of the client process (used by LSP client).
+        \\
         \\Options:
-        \\     --stdio                  Communicate over stdio [default]
-        \\ -p, --port <PORT>            Communicate over socket
-        \\     --clientProcessId <PID>  PID of the client process
-        \\     --dev-mode <path>        Enable development mode
+        \\ -h, --help               Print this message.
+        \\     --stdio              Communicate over stdio. [default]
+        \\ -p, --port <PORT>        Communicate over socket.
+        \\     --dev-mode <PATH>    Enable development mode: redirects stderr to the given path.
+        \\     --parse-file <PATH>  Parses the given file, prints diagnostics, then exits.
+        \\     --print-ast          Prints the parse tree. Only valid with --parse-file.
         \\
         \\
     ;
@@ -42,6 +49,18 @@ pub const Arguments = struct {
         std.process.exit(1);
     }
 
+    const ValueParser = struct {
+        args: *std.process.ArgIterator,
+        option: []const u8,
+        value: ?[]const u8,
+
+        pub fn get(self: *@This(), name: []const u8) []const u8 {
+            if (self.value) |value| return value;
+            if (self.args.next()) |value| return value;
+            fail("'{s}' expects an argument '{s}'", .{ self.option, name });
+        }
+    };
+
     pub fn parse(allocator: std.mem.Allocator) !Arguments {
         var args = try std.process.argsWithAllocator(allocator);
         defer args.deinit();
@@ -50,43 +69,56 @@ pub const Arguments = struct {
         var parsed = Arguments{};
 
         while (args.next()) |arg| {
-            const name_end = std.mem.indexOfScalar(u8, arg, '=') orelse arg.len;
-            const name = arg[0..name_end];
-            const extra_value = if (name_end == arg.len) null else arg[name_end + 1 ..];
+            const option_end = std.mem.indexOfScalar(u8, arg, '=') orelse arg.len;
+            const option = arg[0..option_end];
 
-            if (isAny(name, &.{ "--help", "-h" })) {
+            var value_parser = ValueParser{
+                .args = &args,
+                .option = option,
+                .value = if (option_end == arg.len) null else arg[option_end + 1 ..],
+            };
+
+            if (isAny(option, &.{ "--help", "-h" })) {
                 printHelp();
             }
 
-            if (isAny(name, &.{ "--version", "-v" })) {
+            if (isAny(option, &.{ "--version", "-v" })) {
                 printVersion();
             }
 
-            if (isAny(name, &.{"--stdio"})) {
+            if (isAny(option, &.{"--stdio"})) {
                 parsed.channel = .stdio;
                 continue;
             }
 
-            if (isAny(name, &.{"--dev-mode"})) {
-                const path = extra_value orelse args.next() orelse
-                    fail("{s}: expected a path", .{name});
+            if (isAny(option, &.{"--dev-mode"})) {
+                const path = value_parser.get("PATH");
                 parsed.dev_mode = path;
                 continue;
             }
 
-            if (isAny(name, &.{ "--port", "-p" })) {
-                const value = extra_value orelse args.next() orelse
-                    fail("{s}: expected port number", .{name});
+            if (isAny(option, &.{ "--port", "-p" })) {
+                const value = value_parser.get("PORT");
                 const port = std.fmt.parseInt(u16, value, 10) catch
-                    fail("{s}: not a valid port number: {s}", .{ name, value });
+                    fail("{s}: not a valid port number: {s}", .{ option, value });
                 parsed.channel = .{ .socket = port };
                 continue;
             }
 
-            if (isAny(name, &.{"--clientProcessId"})) {
-                const value = extra_value orelse args.next() orelse fail("expected PID", .{});
+            if (isAny(option, &.{"--clientProcessId"})) {
+                const value = value_parser.get("PID");
                 parsed.client_pid = std.fmt.parseInt(c_int, value, 10) catch
-                    fail("{s}: not a valid PID: {s}", .{ name, value });
+                    fail("{s}: not a valid PID: {s}", .{ option, value });
+                continue;
+            }
+
+            if (isAny(option, &.{"--parse-file"})) {
+                parsed.parse_file = value_parser.get("PATH");
+                continue;
+            }
+
+            if (isAny(option, &.{"--print-ast"})) {
+                parsed.print_ast = true;
                 continue;
             }
 

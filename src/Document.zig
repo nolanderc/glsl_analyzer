@@ -24,7 +24,7 @@ pub fn invalidate(self: *@This()) void {
     self.parse_tree = null;
 }
 
-pub fn source(self: *@This()) []const u8 {
+pub fn source(self: @This()) []const u8 {
     return self.contents.items;
 }
 
@@ -64,20 +64,20 @@ pub fn utf8FromPosition(self: @This(), position: lsp.Position) u32 {
     return @intCast(i + codepoints.i);
 }
 
-pub fn positionFromUtf8(self: @This(), offset: u32) lsp.Position {
+pub fn positionFromUtf8(text: []const u8, offset: u32) lsp.Position {
     var line_breaks: u32 = 0;
     var line_start: usize = 0;
 
-    const text = self.contents.items[0..offset];
+    const before = text[0..offset];
 
-    for (text, 0..) |ch, index| {
+    for (before, 0..) |ch, index| {
         if (ch == '\n') {
             line_breaks += 1;
             line_start = index + 1;
         }
     }
 
-    const last_line = text[line_start..];
+    const last_line = before[line_start..];
     const character = std.unicode.calcUtf16LeLen(last_line) catch last_line.len;
 
     return .{ .line = line_breaks, .character = @intCast(character) };
@@ -86,7 +86,7 @@ pub fn positionFromUtf8(self: @This(), offset: u32) lsp.Position {
 pub fn wholeRange(self: @This()) lsp.Range {
     return .{
         .start = .{ .line = 0, .character = 0 },
-        .end = self.positionFromUtf8(@intCast(self.contents.items.len)),
+        .end = positionFromUtf8(self.source(), @intCast(self.contents.items.len)),
     };
 }
 
@@ -94,8 +94,8 @@ pub fn nodeRange(self: *@This(), node: u32) !lsp.Range {
     const parsed = try self.parseTree();
     const span = parsed.tree.nodeSpan(node);
     return .{
-        .start = self.positionFromUtf8(span.start),
-        .end = self.positionFromUtf8(span.end),
+        .start = positionFromUtf8(self.source(), span.start),
+        .end = positionFromUtf8(self.source(), span.end),
     };
 }
 

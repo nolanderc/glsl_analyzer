@@ -35,9 +35,7 @@ fn enableDevelopmentMode(stderr_target: []const u8) !void {
     }
 }
 
-pub fn main() !void {
-    defer std.debug.print("exited\n", .{});
-
+pub fn main() !u8 {
     var gpa = std.heap.GeneralPurposeAllocator(.{ .stack_trace_frames = 8 }){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
@@ -53,6 +51,39 @@ pub fn main() !void {
         } else |err| {
             std.log.warn("couldn't enable development mode: {s}", .{@errorName(err)});
         }
+    }
+
+    if (args.parse_file) |path| {
+        const source = std.fs.cwd().readFileAlloc(allocator, path, 1 << 30) catch |err| {
+            std.log.err("could not open '{s}': {s}", .{ path, @errorName(err) });
+            return err;
+        };
+        defer allocator.free(source);
+
+        var diagnostics = std.ArrayList(parse.Diagnostic).init(allocator);
+        defer diagnostics.deinit();
+
+        var tree = try parse.parse(allocator, source, .{ .diagnostics = &diagnostics });
+        defer tree.deinit(allocator);
+
+        if (args.print_ast) {
+            var buffered_stdout = std.io.bufferedWriter(std.io.getStdOut().writer());
+            try buffered_stdout.writer().print("{}", .{tree.format(source)});
+            try buffered_stdout.flush();
+        }
+
+        if (diagnostics.items.len != 0) {
+            for (diagnostics.items) |diagnostic| {
+                const position = Workspace.Document.positionFromUtf8(source, diagnostic.span.start);
+                try std.io.getStdErr().writer().print(
+                    "{s}:{}:{}: {s}\n",
+                    .{ path, position.line + 1, position.character + 1, diagnostic.message },
+                );
+            }
+            return 1;
+        }
+
+        return 0;
     }
 
     var channel: Channel = switch (args.channel) {
@@ -148,6 +179,8 @@ pub fn main() !void {
             else => return err,
         };
     }
+
+    return 0;
 }
 
 fn logJsonError(err: []const u8, diagnostics: std.json.Diagnostics, bytes: []const u8) void {
