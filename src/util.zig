@@ -25,6 +25,48 @@ pub fn getJsonErrorContext(diagnostics: std.json.Diagnostics, bytes: []const u8)
     return line;
 }
 
+pub fn normalizePath(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
+    var buffer = try std.ArrayList(u8).initCapacity(allocator, path.len);
+    errdefer buffer.deinit();
+
+    var components = try std.fs.path.componentIterator(path);
+
+    if (components.root()) |root| {
+        try buffer.appendSlice(root);
+        if (!lastIsSep(buffer.items)) try buffer.append(std.fs.path.sep);
+    }
+
+    while (components.next()) |component| {
+        if (std.mem.eql(u8, component.name, "..")) {
+            while (buffer.items.len > components.root_end_index) {
+                if (std.fs.path.isSep(buffer.pop())) break;
+            }
+        } else if (std.mem.eql(u8, component.name, ".")) {
+            continue;
+        } else {
+            if (buffer.items.len != 0 and !lastIsSep(buffer.items)) try buffer.append(std.fs.path.sep);
+            try buffer.appendSlice(component.name);
+        }
+    }
+
+    return buffer.toOwnedSlice();
+}
+
+fn lastIsSep(path: []const u8) bool {
+    return std.fs.path.isSep(path[path.len - 1]);
+}
+
+test "normalizePath" {
+    try expectNormalizedPath("C:/bar", "C:/blah/../bar/.");
+    try expectNormalizedPath("/bar", "/../bar/.");
+}
+
+fn expectNormalizedPath(expected: []const u8, input: []const u8) !void {
+    const normalized = try normalizePath(std.testing.allocator, input);
+    defer std.testing.allocator.free(normalized);
+    try std.testing.expectEqualStrings(expected, normalized);
+}
+
 pub fn pathFromUri(allocator: std.mem.Allocator, uri: []const u8) ![]u8 {
     const scheme = "file://";
     if (!std.mem.startsWith(u8, uri, scheme)) return error.UnknownUrlScheme;
@@ -33,8 +75,9 @@ pub fn pathFromUri(allocator: std.mem.Allocator, uri: []const u8) ![]u8 {
 }
 
 pub fn uriFromPath(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
-    const normalized = try std.fs.realpathAlloc(allocator, path);
+    const normalized = try normalizePath(allocator, path);
     defer allocator.free(normalized);
+
     return percentEncodeImpl(allocator, "file://", normalized, struct {
         fn shouldEncode(byte: u8) bool {
             return needsPercentEncode(byte) and !std.fs.path.isSep(byte);
