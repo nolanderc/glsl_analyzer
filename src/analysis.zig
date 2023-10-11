@@ -1,5 +1,6 @@
 const std = @import("std");
 const parse = @import("parse.zig");
+const util = @import("util.zig");
 const Tree = parse.Tree;
 const Node = parse.Node;
 const Workspace = @import("Workspace.zig");
@@ -50,12 +51,21 @@ pub const Type = struct {
     ) !void {
         const prettify = @import("format.zig").format;
 
+        var first = true;
+
         if (data.type.qualifiers) |qualifiers| {
             try prettify(data.tree, data.source, writer, prettifyOptions(qualifiers.node));
+            first = false;
         }
         if (data.type.specifier) |specifier| {
-            if (data.type.qualifiers != null) try writer.writeByte(' ');
+            if (!first) try writer.writeByte(' ');
             try prettify(data.tree, data.source, writer, prettifyOptions(specifier.getNode()));
+            first = false;
+        }
+        if (data.type.block_fields) |block_fields| {
+            if (!first) try writer.writeByte(' ');
+            try prettify(data.tree, data.source, writer, prettifyOptions(block_fields.node));
+            first = false;
         }
         if (data.type.arrays) |arrays| {
             var iterator = arrays;
@@ -143,7 +153,7 @@ fn expectTypeFormat(source: []const u8, types: []const []const u8) !void {
     var workspace = try Workspace.init(allocator);
     defer workspace.deinit();
 
-    const document = try workspace.getOrCreateDocument(.{ .uri = "test.glsl", .version = 0 });
+    const document = try workspace.getOrCreateDocument(.{ .uri = "file://test.glsl", .version = 0 });
     try document.replaceAll(source);
 
     var cursors = try findCursors(document);
@@ -312,7 +322,7 @@ pub fn visibleSymbols(
 
         try visibleSymbolsTree(document, tree.parent(node) orelse node, symbols);
 
-        if (std.fs.path.dirname(document.uri)) |document_dir| {
+        if (std.fs.path.dirname(document.path)) |document_dir| {
             const node_end = if (tree.tag(node) == .file)
                 std.math.maxInt(u32)
             else
@@ -328,10 +338,14 @@ pub fn visibleSymbols(
                 switch (directive) {
                     .include => |include| {
                         const relative_path = line[include.path.start..include.path.end];
+
                         const uri = if (std.fs.path.isAbsolute(relative_path))
-                            try std.fs.path.join(allocator, &.{ "file://", relative_path })
-                        else
-                            try std.fs.path.join(allocator, &.{ document_dir, relative_path });
+                            try util.uriFromPath(allocator, relative_path)
+                        else blk: {
+                            const absolute = try std.fs.path.join(allocator, &.{ document_dir, relative_path });
+                            defer allocator.free(absolute);
+                            break :blk try util.uriFromPath(allocator, absolute);
+                        };
                         defer allocator.free(uri);
 
                         const included_document = workspace.getOrLoadDocument(.{ .uri = uri }) catch |err| {
@@ -558,10 +572,17 @@ test "find definition global" {
         \\}
     );
     try expectDefinitionIsFound(
-        \\layout(location = 1) uniform MyBlock { vec4 /*1*/color; } /*2*/my_block;
+        \\layout(location = 1) uniform MyBlock { vec4 color; } /*1*/my_block;
+        \\void main() {
+        \\    color;
+        \\    /*1*/my_block;
+        \\}
+    );
+    try expectDefinitionIsNotFound(
+        \\layout(location = 1) uniform MyBlock { vec4 /*1*/color; } my_block;
         \\void main() {
         \\    /*1*/color;
-        \\    /*2*/my_block;
+        \\    my_block;
         \\}
     );
 }
@@ -570,7 +591,7 @@ fn expectDefinitionIsFound(source: []const u8) !void {
     var workspace = try Workspace.init(std.testing.allocator);
     defer workspace.deinit();
 
-    const document = try workspace.getOrCreateDocument(.{ .uri = "test.glsl", .version = 0 });
+    const document = try workspace.getOrCreateDocument(.{ .uri = "file://test.glsl", .version = 0 });
     try document.replaceAll(source);
 
     var cursors = try findCursors(document);
@@ -594,7 +615,7 @@ fn expectDefinitionIsNotFound(source: []const u8) !void {
     var workspace = try Workspace.init(std.testing.allocator);
     defer workspace.deinit();
 
-    const document = try workspace.getOrCreateDocument(.{ .uri = "test.glsl", .version = 0 });
+    const document = try workspace.getOrCreateDocument(.{ .uri = "file://test.glsl", .version = 0 });
     try document.replaceAll(source);
 
     var cursors = try findCursors(document);
@@ -607,7 +628,7 @@ fn expectDefinitionIsNotFound(source: []const u8) !void {
             try findDefinition(document, usage, &references);
             if (references.items.len != 0) {
                 const ref = references.items[0];
-                std.debug.print("found unexpected reference: {s}:{}", .{ ref.document.uri, ref.node });
+                std.debug.print("found unexpected reference: {s}:{}\n", .{ ref.document.path, ref.node });
                 return error.FoundUnexpectedReference;
             }
         }

@@ -24,3 +24,129 @@ pub fn getJsonErrorContext(diagnostics: std.json.Diagnostics, bytes: []const u8)
     const line = bytes[@max(start, offset -| 40)..@min(end, offset +| 40)];
     return line;
 }
+
+pub fn pathFromUri(allocator: std.mem.Allocator, uri: []const u8) ![]u8 {
+    const scheme = "file://";
+    if (!std.mem.startsWith(u8, uri, scheme)) return error.UnknownUrlScheme;
+    const uri_path = uri[scheme.len..];
+    return percentDecode(allocator, uri_path);
+}
+
+pub fn uriFromPath(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
+    const normalized = try std.fs.realpathAlloc(allocator, path);
+    defer allocator.free(normalized);
+    return percentEncodeImpl(allocator, "file://", normalized, struct {
+        fn shouldEncode(byte: u8) bool {
+            return needsPercentEncode(byte) and !std.fs.path.isSep(byte);
+        }
+    }.shouldEncode);
+}
+
+pub fn percentEncode(allocator: std.mem.Allocator, text: []const u8) ![]u8 {
+    return percentEncodeImpl(allocator, "", text, needsPercentEncode);
+}
+
+fn percentEncodeImpl(
+    allocator: std.mem.Allocator,
+    comptime prefix: []const u8,
+    text: []const u8,
+    comptime should_encode: fn (u8) bool,
+) ![]u8 {
+    var encoded_characters: usize = 0;
+    for (text) |byte| encoded_characters += @intFromBool(should_encode(byte));
+
+    var out = try std.ArrayListUnmanaged(u8).initCapacity(
+        allocator,
+        prefix.len + text.len + 2 * encoded_characters,
+    );
+
+    out.appendSliceAssumeCapacity(prefix);
+
+    for (text) |byte| {
+        if (should_encode(byte)) {
+            out.appendAssumeCapacity('%');
+            out.appendSliceAssumeCapacity(&std.fmt.bytesToHex([1]u8{byte}, .upper));
+        } else {
+            out.appendAssumeCapacity(byte);
+        }
+    }
+
+    return out.toOwnedSlice(allocator);
+}
+
+fn needsPercentEncode(byte: u8) bool {
+    return switch (byte) {
+        'A'...'Z',
+        'a'...'z',
+        '0'...'9',
+        '-',
+        '_',
+        '.',
+        '~',
+        => false,
+        else => true,
+    };
+}
+
+pub fn percentDecode(allocator: std.mem.Allocator, text: []const u8) ![]u8 {
+    var encoded_characters: usize = 0;
+    for (text) |byte| encoded_characters += @intFromBool(byte == '%');
+
+    var out = try std.ArrayListUnmanaged(u8).initCapacity(allocator, text.len - encoded_characters * 2);
+
+    var i: usize = 0;
+    while (i < text.len) {
+        if (text[i] == '%') {
+            if (i + 3 > text.len) return error.Incomplete;
+            const high = try parseNibble(text[i + 1]);
+            const low = try parseNibble(text[i + 2]);
+            const byte = (@as(u8, high) << 4) | @as(u8, low);
+            out.appendAssumeCapacity(byte);
+            i += 3;
+        } else {
+            out.appendAssumeCapacity(text[i]);
+            i += 1;
+        }
+    }
+
+    return out.toOwnedSlice(allocator);
+}
+
+fn parseNibble(byte: u8) !u4 {
+    switch (byte) {
+        '0'...'9' => return @intCast(byte - '0'),
+        'A'...'F' => return @intCast(byte - 'A' + 10),
+        'a'...'f' => return @intCast(byte - 'a' + 10),
+        else => return error.InvalidByte,
+    }
+}
+
+test "percentEncodePath" {
+    try expectUriFromPath("file://C%3A/foo", "C:/foo");
+}
+
+fn expectUriFromPath(expected: []const u8, input: []const u8) !void {
+    const encoded = try uriFromPath(std.testing.allocator, input);
+    defer std.testing.allocator.free(encoded);
+    try std.testing.expectEqualStrings(expected, encoded);
+}
+
+test "percentEncode" {
+    try expectPercentEncoded("C%3A", "C:");
+}
+
+fn expectPercentEncoded(expected: []const u8, input: []const u8) !void {
+    const encoded = try percentEncode(std.testing.allocator, input);
+    defer std.testing.allocator.free(encoded);
+    try std.testing.expectEqualStrings(expected, encoded);
+}
+
+test "percentDecode" {
+    try expectPercentDecoded("C:", "C%3A");
+}
+
+fn expectPercentDecoded(expected: []const u8, input: []const u8) !void {
+    const decoded = try percentDecode(std.testing.allocator, input);
+    defer std.testing.allocator.free(decoded);
+    try std.testing.expectEqualStrings(expected, decoded);
+}

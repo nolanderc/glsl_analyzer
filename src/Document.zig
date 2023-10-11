@@ -6,6 +6,8 @@ const Workspace = @import("Workspace.zig");
 workspace: *Workspace,
 
 uri: []const u8,
+path: []const u8,
+
 version: ?i64,
 
 /// The raw bytes of the file (utf-8)

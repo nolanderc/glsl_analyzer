@@ -392,7 +392,7 @@ pub const Dispatch = struct {
         request: *Request,
         id: lsp.TextDocumentIdentifier,
     ) !*Workspace.Document {
-        return state.workspace.getDocument(id) orelse state.fail(request.id, .{
+        return try state.workspace.getDocument(id) orelse state.fail(request.id, .{
             .code = .invalid_params,
             .message = "document not found",
         });
