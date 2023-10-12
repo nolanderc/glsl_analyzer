@@ -1,4 +1,5 @@
 const std = @import("std");
+const lsp = @import("lsp.zig");
 
 pub fn JsonEnumAsIntMixin(comptime Self: type) type {
     return struct {
@@ -192,4 +193,23 @@ fn expectPercentDecoded(expected: []const u8, input: []const u8) !void {
     const decoded = try percentDecode(std.testing.allocator, input);
     defer std.testing.allocator.free(decoded);
     try std.testing.expectEqualStrings(expected, decoded);
+}
+
+pub fn positionFromUtf8(text: []const u8, offset: u32) lsp.Position {
+    var line_breaks: u32 = 0;
+    var line_start: usize = 0;
+
+    const before = text[0..offset];
+
+    for (before, 0..) |ch, index| {
+        if (ch == '\n') {
+            line_breaks += 1;
+            line_start = index + 1;
+        }
+    }
+
+    const last_line = before[line_start..];
+    const character = std.unicode.calcUtf16LeLen(last_line) catch last_line.len;
+
+    return .{ .line = line_breaks, .character = @intCast(character) };
 }
