@@ -74,7 +74,7 @@ pub fn main() !u8 {
 
         if (diagnostics.items.len != 0) {
             for (diagnostics.items) |diagnostic| {
-                const position = Workspace.Document.positionFromUtf8(source, diagnostic.span.start);
+                const position = diagnostic.position(source);
                 try std.io.getStdErr().writer().print(
                     "{s}:{}:{}: {s}\n",
                     .{ path, position.line + 1, position.character + 1, diagnostic.message },

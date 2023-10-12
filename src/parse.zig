@@ -1,4 +1,6 @@
 const std = @import("std");
+const lsp = @import("lsp.zig");
+const util = @import("util.zig");
 
 pub const ParseOptions = struct {
     /// Append any ignored tokens (comments or preprocessor directives) to this list.
@@ -373,6 +375,10 @@ pub const Range = Span;
 pub const Diagnostic = struct {
     span: Span,
     message: []const u8,
+
+    pub fn position(self: @This(), source: []const u8) lsp.Position {
+        return util.positionFromUtf8(source, self.span.start);
+    }
 };
 
 pub const Parser = struct {
@@ -508,10 +514,6 @@ pub const Parser = struct {
         });
 
         const m = self.open();
-        self.deferError(self.stack.append(self.allocator, .{
-            .tag = .unknown,
-            .span = .{ .start = self.next.span.start, .end = self.next.span.start },
-        }));
         self.close(m, .invalid);
     }
 
@@ -736,6 +738,7 @@ const statement_first = TokenSet.initMany(&.{
     .keyword_default,
     .keyword_break,
     .keyword_continue,
+    .keyword_discard,
     .keyword_return,
 }).unionWith(type_qualifier_first)
     .unionWith(type_specifier_first)
@@ -1805,6 +1808,22 @@ test "parse switch" {
     );
 }
 
+test "parse discard" {
+    // From: https://github.com/nolanderc/glsl_analyzer/issues/15
+    try expectParsesOkay(
+        \\#version 330 core
+        \\void main() {
+        \\    if (true) discard;
+        \\}
+    );
+    try expectParsesOkay(
+        \\#version 330 core
+        \\void main() {
+        \\    if (true) { discard; }
+        \\}
+    );
+}
+
 fn expectParsesOkay(source: []const u8) !void {
     var diagnostics = std.ArrayList(Diagnostic).init(std.testing.allocator);
     defer diagnostics.deinit();
@@ -1812,11 +1831,13 @@ fn expectParsesOkay(source: []const u8) !void {
     var tree = try parse(std.testing.allocator, source, .{ .diagnostics = &diagnostics });
     defer tree.deinit(std.testing.allocator);
 
+    errdefer std.debug.print("======== source ========\n{s}\n========================\n", .{source});
     errdefer std.log.err("tree:\n{}", .{tree.format(source)});
 
     if (diagnostics.items.len != 0) {
         for (diagnostics.items) |diagnostic| {
-            std.log.err("{s}", .{diagnostic.message});
+            const position = diagnostic.position(source);
+            std.log.err("{}:{}: {s}", .{ position.line + 1, position.character + 1, diagnostic.message });
         }
         return error.FoundDiagnostics;
     }
