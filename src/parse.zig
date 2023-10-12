@@ -1332,6 +1332,11 @@ pub const Tokenizer = struct {
                     while (i < N and std.ascii.isDigit(text[i])) i += 1;
                 }
 
+                if (first == '.' and i == self.offset + 1) {
+                    // we have only parsed the dot without any digits.
+                    return self.token(.@".", i);
+                }
+
                 if (i < N and (text[i] == 'e' or text[i] == 'E')) {
                     // exponent
                     i += 1;
@@ -1344,14 +1349,10 @@ pub const Tokenizer = struct {
                 } else if (i + 1 < N and (std.mem.startsWith(u8, text[i..], "lf") or
                     std.mem.startsWith(u8, text[i..], "LF")))
                 {
-                    i += 1;
+                    i += 2;
                 }
 
-                if (first == '.' and self.offset + 1 == i) {
-                    return self.token(.@".", i);
-                } else {
-                    return self.token(.number, i);
-                }
+                return self.token(.number, i);
             },
 
             'a'...'z', 'A'...'Z', '_' => {
@@ -1820,6 +1821,16 @@ test "parse discard" {
         \\#version 330 core
         \\void main() {
         \\    if (true) { discard; }
+        \\}
+    );
+}
+
+test "parse field selector" {
+    // From: https://github.com/nolanderc/glsl_analyzer/issues/15
+    try expectParsesOkay(
+        \\#version 330 core
+        \\void main() {
+        \\    foo.flag;
         \\}
     );
 }
