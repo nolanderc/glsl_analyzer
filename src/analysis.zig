@@ -303,7 +303,9 @@ pub fn visibleSymbols(
     symbols: *std.ArrayList(Reference),
 ) !void {
     const workspace = start_document.workspace;
-    const allocator = workspace.allocator;
+    var arena = std.heap.ArenaAllocator.init(workspace.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
 
     var visited_documents = std.AutoHashMap(*Document, void).init(allocator);
     defer visited_documents.deinit();
@@ -320,7 +322,10 @@ pub fn visibleSymbols(
         const tree = parse_tree.tree;
         const node = current.node orelse tree.rootIndex();
 
+        const symbols_start = symbols.items.len;
         try visibleSymbolsTree(document, tree.parent(node) orelse node, symbols);
+        const unique = try partitonUniqueSymbols(allocator, symbols.items[symbols_start..], tree.nodes.len);
+        symbols.items.len = symbols_start + unique;
 
         if (std.fs.path.dirname(document.path)) |document_dir| {
             const node_end = if (tree.tag(node) == .file)
@@ -372,6 +377,36 @@ pub fn visibleSymbols(
             }
         }
     }
+}
+
+/// Splits the list into two partitions: the first with all unique symbols, and the second with all duplicates.
+/// Returns the number of unique symbols.
+fn partitonUniqueSymbols(
+    allocator: std.mem.Allocator,
+    symbols: []Reference,
+    node_count: usize,
+) !usize {
+    // we want to keep the most recent symbol since its parent declaration will
+    // be higher up the tree, so begin by reversing the list (we keep the first
+    // unique value)
+    std.mem.reverse(Reference, symbols);
+
+    var visited = try std.DynamicBitSetUnmanaged.initEmpty(allocator, node_count);
+    defer visited.deinit(allocator);
+
+    var write: usize = 0;
+
+    for (symbols) |*symbol| {
+        if (visited.isSet(symbol.node)) continue;
+        visited.set(symbol.node);
+        std.mem.swap(Reference, &symbols[write], symbol);
+        write += 1;
+    }
+
+    // Restore the order the nodes were visited.
+    std.mem.reverse(Reference, symbols[0..write]);
+
+    return write;
 }
 
 fn visibleSymbolsTree(document: *Document, start_node: u32, symbols: *std.ArrayList(Reference)) !void {
