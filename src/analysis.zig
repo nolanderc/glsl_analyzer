@@ -392,7 +392,7 @@ fn visibleSymbolsTree(document: *Document, start_node: u32, symbols: *std.ArrayL
         var current_child = if (tag == .file)
             children.end
         else if (previous != current)
-            previous
+            previous + 1
         else
             continue;
 

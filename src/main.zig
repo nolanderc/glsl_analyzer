@@ -550,6 +550,7 @@ pub const Dispatch = struct {
             params.value.position,
             &completions,
             symbol_arena.allocator(),
+            .{ .ignore_current = true },
         );
 
         try state.success(request.id, completions.items);
@@ -561,6 +562,7 @@ pub const Dispatch = struct {
         position: lsp.Position,
         completions: *std.ArrayList(lsp.CompletionItem),
         arena: std.mem.Allocator,
+        options: struct { ignore_current: bool },
     ) !void {
         var has_fields = false;
 
@@ -576,6 +578,10 @@ pub const Dispatch = struct {
             try completions.ensureUnusedCapacity(symbols.items.len);
 
             for (symbols.items) |symbol| {
+                if (options.ignore_current and symbol.document == document and symbol.node == node) {
+                    continue;
+                }
+
                 const parsed: *const Workspace.Document.CompleteParseTree = try symbol.document.parseTree();
 
                 const symbol_type = try analysis.typeOf(symbol);
@@ -645,6 +651,7 @@ pub const Dispatch = struct {
             params.value.position,
             &completions,
             symbol_arena.allocator(),
+            .{ .ignore_current = false },
         );
 
         var text = std.ArrayList(u8).init(state.allocator);
