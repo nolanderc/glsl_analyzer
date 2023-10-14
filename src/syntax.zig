@@ -201,6 +201,11 @@ pub fn Token(comptime tag: Tag) type {
         pub fn extract(_: Tree, node: u32, _: void) @This() {
             return .{ .node = node };
         }
+
+        pub fn text(self: @This(), source: []const u8, tree: Tree) []const u8 {
+            const span = tree.token(self.node);
+            return source[span.start..span.end];
+        }
     };
 }
 
