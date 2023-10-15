@@ -418,9 +418,15 @@ fn collectLocalSymbols(
     var path = try std.ArrayListUnmanaged(u32).initCapacity(arena, 8);
     defer path.deinit(arena);
 
+    var closest_declaration: ?u32 = null;
+
     {
         var child = target_node;
         while (tree.parent(child)) |parent| : (child = parent) {
+            if (closest_declaration == null and syntax.AnyDeclaration.match(tree, parent) != null) {
+                closest_declaration = parent;
+            }
+
             try path.append(arena, child);
         }
     }
@@ -432,7 +438,7 @@ fn collectLocalSymbols(
 
         const children = tree.children(parent);
         var current_child = children.start;
-        while (current_child < target_child) : (current_child += 1) {
+        while (current_child < target_child or current_child == closest_declaration) : (current_child += 1) {
             if (syntax.ExternalDeclaration.tryExtract(tree, current_child)) |declaration| {
                 try collectDeclarationSymbols(scope, document, tree, declaration);
                 continue;
