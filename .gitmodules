@@ -4,3 +4,6 @@
 [submodule "spec/GLSL"]
 	path = spec/GLSL
 	url = https://github.com/KhronosGroup/GLSL
+[submodule "tests/glsl-samples"]
+	path = tests/glsl-samples
+	url = https://github.com/nolanderc/glsl-samples
