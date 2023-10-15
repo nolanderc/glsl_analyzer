@@ -175,7 +175,10 @@ pub const Block = ListExtractor(.block, Token(.@"{"), Statement, Token(.@"}"));
 
 pub const Statement = union(enum) {
     pub usingnamespace UnionExtractorMixin(@This());
+    declaration: Declaration,
 };
+
+pub const ConditionList = ListExtractor(.condition_list, Token(.@"("), Statement, Token(.@")"));
 
 pub const Expression = Lazy("ExpressionUnion");
 

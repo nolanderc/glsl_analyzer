@@ -204,9 +204,9 @@ pub fn findDefinition(
     try visibleSymbols(arena, document, node, &symbols);
 
     for (symbols.items) |symbol| {
-        const parsed = try symbol.document.parseTree();
         if (std.mem.eql(u8, name, symbol.name())) {
             try references.append(symbol);
+            const parsed = try symbol.document.parseTree();
             if (!inFileRoot(parsed.tree, symbol.parent_declaration)) break;
         }
     }
@@ -322,6 +322,9 @@ pub const Scope = struct {
         shadowed: ?*Symbol = null,
     };
 
+    /// Call this before entering a new scope.
+    /// When a corresponding call to `end` is made, all symbols added within
+    /// this scope are no longer visible.
     pub fn begin(self: *@This()) !void {
         try self.active_scopes.append(self.allocator, self.next_scope);
         self.next_scope += 1;
@@ -380,7 +383,6 @@ pub fn visibleSymbols(
     start_node: u32,
     symbols: *std.ArrayList(Reference),
 ) !void {
-    _ = start_node;
     var scope = Scope{ .allocator = arena };
     try scope.begin();
     defer scope.end();
@@ -393,56 +395,150 @@ pub fn visibleSymbols(
         try documents.append(start_document);
         try findIncludedDocumentsRecursive(arena, &documents);
 
-        for (documents.items) |document| {
+        var documents_reverse = std.mem.reverseIterator(documents.items);
+        while (documents_reverse.next()) |document| {
             try collectGlobalSymbols(&scope, document);
         }
     }
 
+    try collectLocalSymbols(arena, &scope, start_document, start_node);
+
     try scope.getVisible(symbols);
 }
 
-pub fn collectGlobalSymbols(scope: *Scope, document: *Document) !void {
+fn collectLocalSymbols(
+    arena: std.mem.Allocator,
+    scope: *Scope,
+    document: *Document,
+    target_node: u32,
+) !void {
+    const parsed = try document.parseTree();
+    const tree = parsed.tree;
+
+    var path = try std.ArrayListUnmanaged(u32).initCapacity(arena, 8);
+    defer path.deinit(arena);
+
+    {
+        var child = target_node;
+        while (tree.parent(child)) |parent| : (child = parent) {
+            try path.append(arena, child);
+        }
+    }
+
+    var i = path.items.len - 1;
+    while (i >= 1) : (i -= 1) {
+        const parent = path.items[i];
+        const target_child = path.items[i - 1];
+
+        const children = tree.children(parent);
+        var current_child = children.start;
+        while (current_child < target_child) : (current_child += 1) {
+            if (syntax.ExternalDeclaration.tryExtract(tree, current_child)) |declaration| {
+                try collectDeclarationSymbols(scope, document, tree, declaration);
+                continue;
+            }
+            if (syntax.ParameterList.tryExtract(tree, current_child)) |parameters| {
+                var iterator = parameters.iterator();
+                while (iterator.next(tree)) |parameter| {
+                    const variable = parameter.get(.variable, tree) orelse continue;
+                    try registerVariables(scope, document, tree, .{ .one = variable }, parameter.node);
+                }
+                continue;
+            }
+            if (syntax.ConditionList.tryExtract(tree, current_child)) |condition_list| {
+                var statements = condition_list.iterator();
+                while (statements.next(tree)) |statement| {
+                    switch (statement) {
+                        .declaration => |declaration| {
+                            try collectDeclarationSymbols(
+                                scope,
+                                document,
+                                tree,
+                                .{ .variable = declaration },
+                            );
+                        },
+                    }
+                }
+                continue;
+            }
+        }
+    }
+}
+
+fn collectGlobalSymbols(scope: *Scope, document: *Document) !void {
     const parsed = try document.parseTree();
     const tree = parsed.tree;
 
     const children = tree.children(tree.root);
     for (children.start..children.end) |child| {
-        const global = syntax.AnyDeclaration.tryExtract(tree, @intCast(child)) orelse continue;
-        try collectSymbols(scope, document, tree, global);
+        const global = syntax.ExternalDeclaration.tryExtract(tree, @intCast(child)) orelse continue;
+        try collectDeclarationSymbols(scope, document, tree, global);
     }
 }
 
-fn collectSymbols(
+fn collectDeclarationSymbols(
     scope: *Scope,
     document: *Document,
     tree: parse.Tree,
-    any: syntax.AnyDeclaration,
+    external: syntax.ExternalDeclaration,
 ) !void {
-    switch (any) {
+    switch (external) {
         .function => |function| {
             const ident = function.get(.identifier, tree) orelse return;
-            try scope.add(ident.text(document.source(), tree), .{
-                .document = document,
-                .node = ident.node,
-                .parent_declaration = function.node,
-            });
+            try registerIdentifier(scope, document, tree, ident, function.node);
         },
         .variable => |declaration| {
+            if (declaration.get(.specifier, tree)) |specifier| specifier: {
+                if (specifier != .struct_specifier) break :specifier;
+                const strukt = specifier.struct_specifier;
+                const ident = strukt.get(.name, tree) orelse break :specifier;
+                try registerIdentifier(scope, document, tree, ident, strukt.node);
+            }
+
             const variables = declaration.get(.variables, tree) orelse return;
-            var iterator = variables.iterator();
-            while (iterator.next(tree)) |variable| {
-                const name = variable.get(.name, tree) orelse return;
-                const ident = name.getIdentifier(tree) orelse return;
-                try scope.add(ident.text(document.source(), tree), .{
-                    .document = document,
-                    .node = ident.node,
-                    .parent_declaration = declaration.node,
-                });
+            try registerVariables(scope, document, tree, variables, declaration.node);
+        },
+        .block => |block| {
+            if (block.get(.variable, tree)) |variable| {
+                try registerVariables(scope, document, tree, .{ .one = variable }, block.node);
+            } else {
+                const fields = block.get(.fields, tree) orelse return;
+                var field_iterator = fields.iterator();
+                while (field_iterator.next(tree)) |field| {
+                    const variables = field.get(.variables, tree) orelse continue;
+                    try registerVariables(scope, document, tree, variables, field.node);
+                }
             }
         },
-        else => {
-            std.log.warn("TODO: collect symbols from {s}", .{@tagName(any)});
-        },
+    }
+}
+
+fn registerIdentifier(
+    scope: *Scope,
+    document: *Document,
+    tree: Tree,
+    ident: syntax.Token(.identifier),
+    declaration: u32,
+) !void {
+    try scope.add(ident.text(document.source(), tree), .{
+        .document = document,
+        .node = ident.node,
+        .parent_declaration = declaration,
+    });
+}
+
+fn registerVariables(
+    scope: *Scope,
+    document: *Document,
+    tree: Tree,
+    variables: syntax.Variables,
+    declaration: u32,
+) !void {
+    var iterator = variables.iterator();
+    while (iterator.next(tree)) |variable| {
+        const name = variable.get(.name, tree) orelse return;
+        const ident = name.getIdentifier(tree) orelse return;
+        try registerIdentifier(scope, document, tree, ident, declaration);
     }
 }
 
@@ -502,162 +598,6 @@ fn findIncludedDocuments(
             },
             else => continue,
         }
-    }
-}
-
-/// Splits the list into two partitions: the first with all unique symbols, and the second with all duplicates.
-/// Returns the number of unique symbols.
-fn partitonUniqueSymbols(
-    allocator: std.mem.Allocator,
-    symbols: []Reference,
-    node_count: usize,
-) !usize {
-    // we want to keep the most recent symbol since its parent declaration will
-    // be higher up the tree, so begin by reversing the list (we keep the first
-    // unique value)
-    std.mem.reverse(Reference, symbols);
-
-    var visited = try std.DynamicBitSetUnmanaged.initEmpty(allocator, node_count);
-    defer visited.deinit(allocator);
-
-    var write: usize = 0;
-
-    for (symbols) |*symbol| {
-        if (visited.isSet(symbol.node)) continue;
-        visited.set(symbol.node);
-        std.mem.swap(Reference, &symbols[write], symbol);
-        write += 1;
-    }
-
-    // Restore the order the nodes were visited.
-    std.mem.reverse(Reference, symbols[0..write]);
-
-    return write;
-}
-
-fn visibleSymbolsTree(document: *Document, start_node: u32, symbols: *std.ArrayList(Reference)) !void {
-    const parse_tree = try document.parseTree();
-    const tree = parse_tree.tree;
-
-    // walk the tree upwards until we find the containing declaration
-    var current = start_node;
-    var previous = start_node;
-    while (true) : ({
-        previous = current;
-        current = tree.parent(current) orelse break;
-    }) {
-        const children = tree.children(current);
-
-        const tag = tree.tag(current);
-
-        var current_child = if (tag == .file)
-            children.end
-        else if (previous != current)
-            previous + 1
-        else
-            continue;
-
-        // search for the identifier among the children
-        while (current_child > children.start) {
-            current_child -= 1;
-            try findVisibleSymbols(
-                document,
-                tree,
-                current_child,
-                symbols,
-                .{ .check_children = tag != .file },
-            );
-        }
-    }
-}
-
-fn findVisibleSymbols(
-    document: *Document,
-    tree: Tree,
-    index: u32,
-    symbols: *std.ArrayList(Reference),
-    options: struct {
-        check_children: bool = true,
-        parent_declaration: ?u32 = null,
-    },
-) !void {
-    switch (tree.tag(index)) {
-        .function_declaration => {
-            if (syntax.FunctionDeclaration.tryExtract(tree, index)) |function| {
-                if (function.get(.identifier, tree)) |identifier| {
-                    try symbols.append(.{
-                        .document = document,
-                        .node = identifier.node,
-                        .parent_declaration = index,
-                    });
-                }
-            }
-
-            const children = tree.children(index);
-            var child = children.end;
-            while (child > children.start) {
-                child -= 1;
-                try findVisibleSymbols(document, tree, child, symbols, options);
-            }
-        },
-        .struct_specifier, .variable_declaration => {
-            const children = tree.children(index);
-            var child = children.end;
-            while (child > children.start) {
-                child -= 1;
-
-                if (syntax.VariableName.tryExtract(tree, child)) |name| {
-                    const identifier = name.getIdentifier(tree) orelse continue;
-                    try symbols.append(.{
-                        .document = document,
-                        .node = identifier.node,
-                        .parent_declaration = options.parent_declaration orelse index,
-                    });
-                    continue;
-                }
-
-                try findVisibleSymbols(document, tree, child, symbols, options);
-            }
-        },
-        .block, .statement => return,
-        else => |tag| {
-            if (tag.isToken()) return;
-
-            if (!options.check_children) {
-                if (tag == .parameter_list or tag == .field_declaration_list) {
-                    return;
-                }
-            }
-
-            const children = tree.children(index);
-            var child = children.end;
-            while (child > children.start) {
-                child -= 1;
-
-                var check_children = options.check_children;
-                if (syntax.BlockDeclaration.tryExtract(tree, child)) |block| {
-                    if (block.get(.variable, tree) == null) {
-                        // interface block without name:
-                        check_children = true;
-                    } else {
-                        check_children = false;
-                    }
-                }
-
-                try findVisibleSymbols(document, tree, child, symbols, .{
-                    .check_children = check_children,
-                    .parent_declaration = switch (tag) {
-                        .declaration,
-                        .parameter,
-                        .function_declaration,
-                        .block_declaration,
-                        .struct_specifier,
-                        => index,
-                        else => options.parent_declaration,
-                    },
-                });
-            }
-        },
     }
 }
 
