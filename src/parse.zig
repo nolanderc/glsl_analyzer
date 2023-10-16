@@ -587,6 +587,11 @@ pub const Parser = struct {
             .span = range,
         }));
     }
+
+    fn lastTag(self: *const @This()) Tag {
+        const tags = self.stack.items(.tag);
+        return tags[tags.len - 1];
+    }
 };
 
 pub fn parseFile(p: *Parser) void {
@@ -623,8 +628,28 @@ fn externalDeclaration(p: *Parser) void {
     }
 
     typeQualifier(p);
+
     const identifier_specifier = p.at(.identifier);
     if (p.atAny(type_specifier_first)) typeSpecifier(p);
+
+    if (identifier_specifier and p.lastTag() == .identifier and p.at(.@"(")) {
+        // looks like macro expansion
+        var level: u32 = 0;
+        while (true) {
+            const tag = p.peek();
+            defer p.advance();
+            switch (tag) {
+                .@"(" => level += 1,
+                .@")" => {
+                    level -= 1;
+                    if (level == 0) break;
+                },
+                .eof => break,
+                else => {},
+            }
+        }
+        return p.close(m, .call);
+    }
 
     const m_field_list = p.open();
     if (p.eat(.@"{")) {
@@ -883,9 +908,7 @@ fn simpleStatement(p: *Parser) enum { declaration, expression } {
         has_specifier = true;
     } else {
         if (!expressionOpt(p)) p.emitError("expected a statement");
-
-        const tags = p.stack.items(.tag);
-        has_specifier = switch (tags[tags.len - 1]) {
+        has_specifier = switch (p.lastTag()) {
             .array_specifier, .struct_specifier, .identifier => true,
             else => false,
         };
@@ -1351,12 +1374,6 @@ pub const Tokenizer = struct {
 
                 // decimal/octal
                 while (i < N and std.ascii.isDigit(text[i])) i += 1;
-
-                if (i < N and std.mem.indexOfScalar(u8, "uUsSlL", text[i]) != null) {
-                    // integer suffix (unsigned, short, long)
-                    i += 1;
-                    return self.token(.number, i);
-                }
 
                 if (i < N and text[i] == '.') {
                     // fractional part
