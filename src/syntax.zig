@@ -175,7 +175,10 @@ pub const Block = ListExtractor(.block, Token(.@"{"), Statement, Token(.@"}"));
 
 pub const Statement = union(enum) {
     pub usingnamespace UnionExtractorMixin(@This());
+    declaration: Declaration,
 };
+
+pub const ConditionList = ListExtractor(.condition_list, Token(.@"("), Statement, Token(.@")"));
 
 pub const Expression = Lazy("ExpressionUnion");
 
@@ -200,6 +203,11 @@ pub fn Token(comptime tag: Tag) type {
 
         pub fn extract(_: Tree, node: u32, _: void) @This() {
             return .{ .node = node };
+        }
+
+        pub fn text(self: @This(), source: []const u8, tree: Tree) []const u8 {
+            const span = tree.token(self.node);
+            return source[span.start..span.end];
         }
     };
 }

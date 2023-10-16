@@ -269,6 +269,7 @@ pub const Channel = union(enum) {
 
 const State = struct {
     allocator: std.mem.Allocator,
+
     channel: *std.io.BufferedWriter(4096, Channel.Writer),
     running: bool = true,
     initialized: bool = false,
@@ -567,13 +568,12 @@ pub const Dispatch = struct {
         var has_fields = false;
 
         if (try document.nodeBeforeCursor(position)) |node| {
-            var symbols = std.ArrayList(analysis.Reference).init(state.allocator);
-            defer symbols.deinit();
+            var symbols = std.ArrayList(analysis.Reference).init(arena);
 
-            try analysis.visibleFields(document, node, &symbols);
+            try analysis.visibleFields(arena, document, node, &symbols);
             has_fields = symbols.items.len != 0;
 
-            if (!has_fields) try analysis.visibleSymbols(document, node, &symbols);
+            if (!has_fields) try analysis.visibleSymbols(arena, document, node, &symbols);
 
             try completions.ensureUnusedCapacity(symbols.items.len);
 
@@ -740,7 +740,9 @@ pub const Dispatch = struct {
         var references = std.ArrayList(analysis.Reference).init(state.allocator);
         defer references.deinit();
 
-        try analysis.findDefinition(document, source_node, &references);
+        var arena = std.heap.ArenaAllocator.init(state.allocator);
+        defer arena.deinit();
+        try analysis.findDefinition(arena.allocator(), document, source_node, &references);
 
         if (references.items.len == 0) {
             std.log.debug("could not find definition", .{});

@@ -85,11 +85,13 @@ pub fn nodeRange(self: *@This(), node: u32) !lsp.Range {
 
 pub fn wordUnderCursor(self: *@This(), cursor: lsp.Position) []const u8 {
     const offset = self.utf8FromPosition(cursor);
+    const bytes = self.contents.items;
+
+    if (!isIdentifierChar(bytes[offset])) return "";
 
     var start = offset;
     var end = offset;
 
-    const bytes = self.contents.items;
     while (start > 0 and isIdentifierChar(bytes[start - 1])) start -= 1;
     while (end < bytes.len and isIdentifierChar(bytes[end])) end += 1;
 

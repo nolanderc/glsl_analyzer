@@ -618,6 +618,7 @@ fn externalDeclaration(p: *Parser) void {
     }
 
     typeQualifier(p);
+    const identifier_specifier = p.at(.identifier);
     if (p.atAny(type_specifier_first)) typeSpecifier(p);
 
     const m_field_list = p.open();
@@ -632,9 +633,7 @@ fn externalDeclaration(p: *Parser) void {
         return p.close(m, .block_declaration);
     }
 
-    if (p.eat(.@";")) return p.close(m, .qualifier_declaration);
-
-    if (p.at(.@",")) {
+    if (identifier_specifier and p.at(.@",")) {
         while (p.eat(.@",")) p.expect(.identifier);
         p.expect(.@";");
         return p.close(m, .qualifier_declaration);

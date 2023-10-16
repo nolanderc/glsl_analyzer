@@ -148,7 +148,10 @@ test "typeOf function" {
 }
 
 fn expectTypeFormat(source: []const u8, types: []const []const u8) !void {
-    const allocator = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
 
     var workspace = try Workspace.init(allocator);
     defer workspace.deinit();
@@ -170,7 +173,7 @@ fn expectTypeFormat(source: []const u8, types: []const []const u8) !void {
         var references = std.ArrayList(Reference).init(allocator);
         defer references.deinit();
 
-        try findDefinition(document, cursor.definition, &references);
+        try findDefinition(allocator, document, cursor.definition, &references);
         if (references.items.len != 1) return error.InvalidReference;
         const ref = references.items[0];
 
@@ -184,24 +187,26 @@ fn expectTypeFormat(source: []const u8, types: []const []const u8) !void {
 }
 
 // Given a node in the given parse tree, attempts to find the node(s) it references.
-pub fn findDefinition(document: *Document, node: u32, references: *std.ArrayList(Reference)) !void {
-    const workspace = document.workspace;
-    const allocator = workspace.allocator;
-
+pub fn findDefinition(
+    arena: std.mem.Allocator,
+    document: *Document,
+    node: u32,
+    references: *std.ArrayList(Reference),
+) !void {
     const parse_tree = try document.parseTree();
     const tree = parse_tree.tree;
 
     const name = nodeName(tree, node, document.source()) orelse return;
 
-    var symbols = std.ArrayList(Reference).init(allocator);
+    var symbols = std.ArrayList(Reference).init(arena);
     defer symbols.deinit();
 
-    try visibleSymbols(document, node, &symbols);
+    try visibleSymbols(arena, document, node, &symbols);
 
     for (symbols.items) |symbol| {
-        const parsed = try symbol.document.parseTree();
         if (std.mem.eql(u8, name, symbol.name())) {
             try references.append(symbol);
+            const parsed = try symbol.document.parseTree();
             if (!inFileRoot(parsed.tree, symbol.parent_declaration)) break;
         }
     }
@@ -215,7 +220,12 @@ fn inFileRoot(tree: Tree, node: u32) bool {
     return tree.tag(parent) == .file;
 }
 
-pub fn visibleFields(document: *Document, node: u32, symbols: *std.ArrayList(Reference)) !void {
+pub fn visibleFields(
+    arena: std.mem.Allocator,
+    document: *Document,
+    node: u32,
+    symbols: *std.ArrayList(Reference),
+) !void {
     const name = blk: {
         const parsed = try document.parseTree();
         const tag = parsed.tree.tag(node);
@@ -237,9 +247,8 @@ pub fn visibleFields(document: *Document, node: u32, symbols: *std.ArrayList(Ref
         break :blk first;
     };
 
-    var name_definitions = std.ArrayList(Reference).init(document.workspace.allocator);
-    defer name_definitions.deinit();
-    try findDefinition(document, name, &name_definitions);
+    var name_definitions = std.ArrayList(Reference).init(arena);
+    try findDefinition(arena, document, name, &name_definitions);
     if (name_definitions.items.len == 0) return;
 
     var references = std.ArrayList(Reference).init(document.workspace.allocator);
@@ -272,7 +281,7 @@ pub fn visibleFields(document: *Document, node: u32, symbols: *std.ArrayList(Ref
                     },
                     else => {
                         const identifier = specifier.underlyingName(tree) orelse continue;
-                        try findDefinition(reference.document, identifier.node, &references);
+                        try findDefinition(arena, reference.document, identifier.node, &references);
                     },
                 }
                 continue;
@@ -296,242 +305,305 @@ pub fn visibleFields(document: *Document, node: u32, symbols: *std.ArrayList(Ref
     }
 }
 
-/// Get a list of all symbols visible starting from the given syntax node
+pub const Scope = struct {
+    const ScopeId = u32;
+
+    allocator: std.mem.Allocator,
+    symbols: std.StringArrayHashMapUnmanaged(Symbol) = .{},
+    active_scopes: std.ArrayListUnmanaged(ScopeId) = .{},
+    next_scope: ScopeId = 0,
+
+    const Symbol = struct {
+        /// In which scope this item is valid.
+        scope: ScopeId,
+        /// The syntax node this name refers to.
+        reference: Reference,
+        /// Pointer to any shadowed symbols.
+        shadowed: ?*Symbol = null,
+    };
+
+    /// Call this before entering a new scope.
+    /// When a corresponding call to `end` is made, all symbols added within
+    /// this scope are no longer visible.
+    pub fn begin(self: *@This()) !void {
+        try self.active_scopes.append(self.allocator, self.next_scope);
+        self.next_scope += 1;
+    }
+
+    pub fn end(self: *@This()) void {
+        _ = self.active_scopes.pop();
+    }
+
+    fn currentScope(self: *const @This()) ScopeId {
+        const active = self.active_scopes.items;
+        return active[active.len - 1];
+    }
+
+    pub fn add(self: *@This(), name: []const u8, reference: Reference) !void {
+        const result = try self.symbols.getOrPut(self.allocator, name);
+        errdefer self.symbols.swapRemoveAt(result.index);
+
+        var shadowed: ?*Symbol = null;
+        if (result.found_existing) {
+            const copy = try self.allocator.create(Symbol);
+            copy.* = result.value_ptr.*;
+            shadowed = copy;
+        }
+
+        result.value_ptr.* = .{
+            .scope = self.currentScope(),
+            .reference = reference,
+            .shadowed = shadowed,
+        };
+    }
+
+    pub fn isActive(self: *const @This(), scope: ScopeId) bool {
+        for (self.active_scopes.items) |active| {
+            if (scope == active) return true;
+        }
+        return false;
+    }
+
+    pub fn getVisible(self: *const @This(), symbols: *std.ArrayList(Reference)) !void {
+        try symbols.ensureUnusedCapacity(self.symbols.count());
+        for (self.symbols.values()) |*value| {
+            var current: ?*Symbol = value;
+            while (current) |symbol| : (current = symbol.shadowed) {
+                if (!self.isActive(symbol.scope)) continue;
+                try symbols.append(symbol.reference);
+            }
+        }
+    }
+};
+
+/// Get a list of all symbols visible starting from the given syntax node.
 pub fn visibleSymbols(
+    arena: std.mem.Allocator,
     start_document: *Document,
     start_node: u32,
     symbols: *std.ArrayList(Reference),
 ) !void {
-    const workspace = start_document.workspace;
-    var arena = std.heap.ArenaAllocator.init(workspace.allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+    var scope = Scope{ .allocator = arena };
+    try scope.begin();
+    defer scope.end();
 
-    var visited_documents = std.AutoHashMap(*Document, void).init(allocator);
-    defer visited_documents.deinit();
+    // collect global symbols:
+    {
+        var documents = try std.ArrayList(*Document).initCapacity(arena, 8);
+        defer documents.deinit();
 
-    var stack = std.ArrayList(struct { document: *Document, node: ?u32 }).init(allocator);
-    defer stack.deinit();
+        try documents.append(start_document);
+        try findIncludedDocumentsRecursive(arena, &documents);
 
-    try stack.append(.{ .document = start_document, .node = start_node });
-    try visited_documents.put(start_document, {});
-
-    while (stack.popOrNull()) |current| {
-        const document = current.document;
-        const parse_tree = try document.parseTree();
-        const tree = parse_tree.tree;
-        const node = current.node orelse tree.rootIndex();
-
-        const symbols_start = symbols.items.len;
-        try visibleSymbolsTree(document, tree.parent(node) orelse node, symbols);
-        const unique = try partitonUniqueSymbols(allocator, symbols.items[symbols_start..], tree.nodes.len);
-        symbols.items.len = symbols_start + unique;
-
-        if (std.fs.path.dirname(document.path)) |document_dir| {
-            const node_end = if (tree.tag(node) == .file)
-                std.math.maxInt(u32)
-            else
-                tree.nodeSpanExtreme(node, .start);
-
-            // parse include directives
-            for (parse_tree.ignored, parse_tree.tree.ignoredStart()..) |ignored, ignored_index| {
-                // only process directives before the node:
-                if (ignored.end > node_end) break;
-
-                const line = document.source()[ignored.start..ignored.end];
-                const directive = parse.parsePreprocessorDirective(line) orelse continue;
-                switch (directive) {
-                    .include => |include| {
-                        const relative_path = line[include.path.start..include.path.end];
-
-                        const uri = if (std.fs.path.isAbsolute(relative_path))
-                            try util.uriFromPath(allocator, relative_path)
-                        else blk: {
-                            const absolute = try std.fs.path.join(allocator, &.{ document_dir, relative_path });
-                            defer allocator.free(absolute);
-                            break :blk try util.uriFromPath(allocator, absolute);
-                        };
-                        defer allocator.free(uri);
-
-                        const included_document = workspace.getOrLoadDocument(.{ .uri = uri }) catch |err| {
-                            std.log.err("could not open '{'}': {s}", .{
-                                std.zig.fmtEscapes(uri),
-                                @errorName(err),
-                            });
-                            continue;
-                        };
-
-                        const entry = try visited_documents.getOrPut(included_document);
-                        if (entry.found_existing) continue;
-
-                        try stack.append(.{ .document = included_document, .node = null });
-                    },
-                    .define => {
-                        try symbols.append(Reference{
-                            .document = document,
-                            .node = @intCast(ignored_index),
-                            .parent_declaration = @intCast(ignored_index),
-                        });
-                    },
-                }
-            }
+        var documents_reverse = std.mem.reverseIterator(documents.items);
+        while (documents_reverse.next()) |document| {
+            try collectGlobalSymbols(&scope, document);
         }
     }
+
+    try collectLocalSymbols(arena, &scope, start_document, start_node);
+
+    try scope.getVisible(symbols);
 }
 
-/// Splits the list into two partitions: the first with all unique symbols, and the second with all duplicates.
-/// Returns the number of unique symbols.
-fn partitonUniqueSymbols(
-    allocator: std.mem.Allocator,
-    symbols: []Reference,
-    node_count: usize,
-) !usize {
-    // we want to keep the most recent symbol since its parent declaration will
-    // be higher up the tree, so begin by reversing the list (we keep the first
-    // unique value)
-    std.mem.reverse(Reference, symbols);
-
-    var visited = try std.DynamicBitSetUnmanaged.initEmpty(allocator, node_count);
-    defer visited.deinit(allocator);
-
-    var write: usize = 0;
-
-    for (symbols) |*symbol| {
-        if (visited.isSet(symbol.node)) continue;
-        visited.set(symbol.node);
-        std.mem.swap(Reference, &symbols[write], symbol);
-        write += 1;
-    }
-
-    // Restore the order the nodes were visited.
-    std.mem.reverse(Reference, symbols[0..write]);
-
-    return write;
-}
-
-fn visibleSymbolsTree(document: *Document, start_node: u32, symbols: *std.ArrayList(Reference)) !void {
-    const parse_tree = try document.parseTree();
-    const tree = parse_tree.tree;
-
-    // walk the tree upwards until we find the containing declaration
-    var current = start_node;
-    var previous = start_node;
-    while (true) : ({
-        previous = current;
-        current = tree.parent(current) orelse break;
-    }) {
-        const children = tree.children(current);
-
-        const tag = tree.tag(current);
-
-        var current_child = if (tag == .file)
-            children.end
-        else if (previous != current)
-            previous + 1
-        else
-            continue;
-
-        // search for the identifier among the children
-        while (current_child > children.start) {
-            current_child -= 1;
-            try findVisibleSymbols(
-                document,
-                tree,
-                current_child,
-                symbols,
-                .{ .check_children = tag != .file },
-            );
-        }
-    }
-}
-
-fn findVisibleSymbols(
+fn collectLocalSymbols(
+    arena: std.mem.Allocator,
+    scope: *Scope,
     document: *Document,
-    tree: Tree,
-    index: u32,
-    symbols: *std.ArrayList(Reference),
-    options: struct {
-        check_children: bool = true,
-        parent_declaration: ?u32 = null,
-    },
+    target_node: u32,
 ) !void {
-    switch (tree.tag(index)) {
-        .function_declaration => {
-            if (syntax.FunctionDeclaration.tryExtract(tree, index)) |function| {
-                if (function.get(.identifier, tree)) |identifier| {
-                    try symbols.append(.{
-                        .document = document,
-                        .node = identifier.node,
-                        .parent_declaration = index,
-                    });
+    const parsed = try document.parseTree();
+    const tree = parsed.tree;
+
+    var path = try std.ArrayListUnmanaged(u32).initCapacity(arena, 8);
+    defer path.deinit(arena);
+
+    var closest_declaration: ?u32 = null;
+
+    {
+        var child = target_node;
+        while (tree.parent(child)) |parent| : (child = parent) {
+            if (closest_declaration == null and syntax.AnyDeclaration.match(tree, parent) != null) {
+                closest_declaration = parent;
+            }
+
+            try path.append(arena, child);
+        }
+    }
+
+    var i = path.items.len - 1;
+    while (i >= 1) : (i -= 1) {
+        const parent = path.items[i];
+        const target_child = path.items[i - 1];
+
+        const children = tree.children(parent);
+        var current_child = children.start;
+        while (current_child < target_child or current_child == closest_declaration) : (current_child += 1) {
+            if (syntax.ExternalDeclaration.tryExtract(tree, current_child)) |declaration| {
+                try collectDeclarationSymbols(scope, document, tree, declaration);
+                continue;
+            }
+            if (syntax.ParameterList.tryExtract(tree, current_child)) |parameters| {
+                var iterator = parameters.iterator();
+                while (iterator.next(tree)) |parameter| {
+                    const variable = parameter.get(.variable, tree) orelse continue;
+                    try registerVariables(scope, document, tree, .{ .one = variable }, parameter.node);
                 }
+                continue;
             }
-
-            const children = tree.children(index);
-            var child = children.end;
-            while (child > children.start) {
-                child -= 1;
-                try findVisibleSymbols(document, tree, child, symbols, options);
-            }
-        },
-        .struct_specifier, .variable_declaration => {
-            const children = tree.children(index);
-            var child = children.end;
-            while (child > children.start) {
-                child -= 1;
-
-                if (syntax.VariableName.tryExtract(tree, child)) |name| {
-                    const identifier = name.getIdentifier(tree) orelse continue;
-                    try symbols.append(.{
-                        .document = document,
-                        .node = identifier.node,
-                        .parent_declaration = options.parent_declaration orelse index,
-                    });
-                    continue;
-                }
-
-                try findVisibleSymbols(document, tree, child, symbols, options);
-            }
-        },
-        .block, .statement => return,
-        else => |tag| {
-            if (tag.isToken()) return;
-
-            if (!options.check_children) {
-                if (tag == .parameter_list or tag == .field_declaration_list) {
-                    return;
-                }
-            }
-
-            const children = tree.children(index);
-            var child = children.end;
-            while (child > children.start) {
-                child -= 1;
-
-                var check_children = options.check_children;
-                if (syntax.BlockDeclaration.tryExtract(tree, child)) |block| {
-                    if (block.get(.variable, tree) == null) {
-                        // interface block without name:
-                        check_children = true;
-                    } else {
-                        check_children = false;
+            if (syntax.ConditionList.tryExtract(tree, current_child)) |condition_list| {
+                var statements = condition_list.iterator();
+                while (statements.next(tree)) |statement| {
+                    switch (statement) {
+                        .declaration => |declaration| {
+                            try collectDeclarationSymbols(
+                                scope,
+                                document,
+                                tree,
+                                .{ .variable = declaration },
+                            );
+                        },
                     }
                 }
+                continue;
+            }
+        }
+    }
+}
 
-                try findVisibleSymbols(document, tree, child, symbols, .{
-                    .check_children = check_children,
-                    .parent_declaration = switch (tag) {
-                        .declaration,
-                        .parameter,
-                        .function_declaration,
-                        .block_declaration,
-                        .struct_specifier,
-                        => index,
-                        else => options.parent_declaration,
-                    },
-                });
+fn collectGlobalSymbols(scope: *Scope, document: *Document) !void {
+    const parsed = try document.parseTree();
+    const tree = parsed.tree;
+
+    const children = tree.children(tree.root);
+    for (children.start..children.end) |child| {
+        const global = syntax.ExternalDeclaration.tryExtract(tree, @intCast(child)) orelse continue;
+        try collectDeclarationSymbols(scope, document, tree, global);
+    }
+}
+
+fn collectDeclarationSymbols(
+    scope: *Scope,
+    document: *Document,
+    tree: parse.Tree,
+    external: syntax.ExternalDeclaration,
+) !void {
+    switch (external) {
+        .function => |function| {
+            const ident = function.get(.identifier, tree) orelse return;
+            try registerIdentifier(scope, document, tree, ident, function.node);
+        },
+        .variable => |declaration| {
+            if (declaration.get(.specifier, tree)) |specifier| specifier: {
+                if (specifier != .struct_specifier) break :specifier;
+                const strukt = specifier.struct_specifier;
+                const ident = strukt.get(.name, tree) orelse break :specifier;
+                try registerIdentifier(scope, document, tree, ident, strukt.node);
+            }
+
+            const variables = declaration.get(.variables, tree) orelse return;
+            try registerVariables(scope, document, tree, variables, declaration.node);
+        },
+        .block => |block| {
+            if (block.get(.variable, tree)) |variable| {
+                try registerVariables(scope, document, tree, .{ .one = variable }, block.node);
+            } else {
+                const fields = block.get(.fields, tree) orelse return;
+                var field_iterator = fields.iterator();
+                while (field_iterator.next(tree)) |field| {
+                    const variables = field.get(.variables, tree) orelse continue;
+                    try registerVariables(scope, document, tree, variables, field.node);
+                }
             }
         },
+    }
+}
+
+fn registerIdentifier(
+    scope: *Scope,
+    document: *Document,
+    tree: Tree,
+    ident: syntax.Token(.identifier),
+    declaration: u32,
+) !void {
+    try scope.add(ident.text(document.source(), tree), .{
+        .document = document,
+        .node = ident.node,
+        .parent_declaration = declaration,
+    });
+}
+
+fn registerVariables(
+    scope: *Scope,
+    document: *Document,
+    tree: Tree,
+    variables: syntax.Variables,
+    declaration: u32,
+) !void {
+    var iterator = variables.iterator();
+    while (iterator.next(tree)) |variable| {
+        const name = variable.get(.name, tree) orelse return;
+        const ident = name.getIdentifier(tree) orelse return;
+        try registerIdentifier(scope, document, tree, ident, declaration);
+    }
+}
+
+/// Appends the set of documents which are visible (recursively) from any of the documents in the list.
+fn findIncludedDocumentsRecursive(
+    arena: std.mem.Allocator,
+    documents: *std.ArrayList(*Document),
+) !void {
+    var i: usize = 0;
+    while (i < documents.items.len) : (i += 1) {
+        try findIncludedDocuments(arena, documents.items[i], documents);
+    }
+}
+
+/// Appends the set of documents which are visible (directly) from the given document.
+fn findIncludedDocuments(
+    arena: std.mem.Allocator,
+    start: *Document,
+    documents: *std.ArrayList(*Document),
+) !void {
+    const parsed = try start.parseTree();
+
+    const document_dir = std.fs.path.dirname(start.path) orelse return;
+
+    for (parsed.tree.ignored()) |extra| {
+        const line = start.source()[extra.start..extra.end];
+        const directive = parse.parsePreprocessorDirective(line) orelse continue;
+        switch (directive) {
+            .include => |include| {
+                var include_path = line[include.path.start..include.path.end];
+
+                const is_relative = !std.fs.path.isAbsolute(include_path);
+
+                var absolute_path = include_path;
+                if (is_relative) absolute_path = try std.fs.path.join(arena, &.{ document_dir, include_path });
+                defer if (is_relative) arena.free(absolute_path);
+
+                const uri = try util.uriFromPath(arena, absolute_path);
+                defer arena.free(uri);
+
+                const included_document = start.workspace.getOrLoadDocument(.{ .uri = uri }) catch |err| {
+                    std.log.err("could not open '{'}': {s}", .{
+                        std.zig.fmtEscapes(uri),
+                        @errorName(err),
+                    });
+                    continue;
+                };
+
+                for (documents.items) |document| {
+                    if (document == included_document) {
+                        // document has already been included.
+                        break;
+                    }
+                } else {
+                    try documents.append(included_document);
+                }
+            },
+            else => continue,
+        }
     }
 }
 
@@ -626,6 +698,9 @@ fn expectDefinitionIsFound(source: []const u8) !void {
     var workspace = try Workspace.init(std.testing.allocator);
     defer workspace.deinit();
 
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
     const document = try workspace.getOrCreateDocument(.{ .uri = "file://test.glsl", .version = 0 });
     try document.replaceAll(source);
 
@@ -636,7 +711,7 @@ fn expectDefinitionIsFound(source: []const u8) !void {
         for (cursor.usages.slice()) |usage| {
             var references = std.ArrayList(Reference).init(workspace.allocator);
             defer references.deinit();
-            try findDefinition(document, usage, &references);
+            try findDefinition(arena.allocator(), document, usage, &references);
             if (references.items.len == 0) return error.ReferenceNotFound;
             if (references.items.len > 1) return error.MultipleDefinitions;
             const ref = references.items[0];
@@ -650,6 +725,9 @@ fn expectDefinitionIsNotFound(source: []const u8) !void {
     var workspace = try Workspace.init(std.testing.allocator);
     defer workspace.deinit();
 
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
     const document = try workspace.getOrCreateDocument(.{ .uri = "file://test.glsl", .version = 0 });
     try document.replaceAll(source);
 
@@ -660,7 +738,7 @@ fn expectDefinitionIsNotFound(source: []const u8) !void {
         for (cursor.usages.slice()) |usage| {
             var references = std.ArrayList(Reference).init(workspace.allocator);
             defer references.deinit();
-            try findDefinition(document, usage, &references);
+            try findDefinition(arena.allocator(), document, usage, &references);
             if (references.items.len != 0) {
                 const ref = references.items[0];
                 std.debug.print("found unexpected reference: {s}:{}\n", .{ ref.document.path, ref.node });
