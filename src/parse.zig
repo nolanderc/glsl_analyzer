@@ -1376,11 +1376,8 @@ pub const Tokenizer = struct {
                     while (i < N and std.ascii.isDigit(text[i])) i += 1;
                 }
 
-                if (i < N and (text[i] == 'f' or text[i] == 'F')) {
-                    i += 1;
-                } else if (std.ascii.startsWithIgnoreCase(text[i..], "lf")) {
-                    i += 2;
-                }
+                // type suffix (we just accept anything here to be as permissive as possible)
+                while (i < N and isIdentifierChar(text[i])) i += 1;
 
                 return self.token(.number, i);
             },
