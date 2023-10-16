@@ -1419,32 +1419,7 @@ pub const Tokenizer = struct {
                 else => return self.token(.@"*", i + 1),
             },
             '/' => switch (getOrZero(text, i + 1)) {
-                '/' => {
-                    while (i < text.len) {
-                        switch (text[i]) {
-                            '\n' => break,
-                            '\\' => {
-                                if (getOrZero(text, i + 1) == '\n') {
-                                    i += 2;
-                                } else {
-                                    i += 1;
-                                }
-                            },
-                            else => i += 1,
-                        }
-                    }
-                    return self.token(.comment, i);
-                },
-                '*' => {
-                    i += 2;
-                    while (i + 1 < text.len) : (i += 1) {
-                        if (std.mem.startsWith(u8, text[i..], "*/")) {
-                            i += 2;
-                            break;
-                        }
-                    }
-                    return self.token(.comment, i);
-                },
+                '/', '*' => return self.token(.comment, stripComment(text, i)),
                 '=' => return self.token(.@"/=", i + 2),
                 else => return self.token(.@"/", i + 1),
             },
@@ -1491,13 +1466,13 @@ pub const Tokenizer = struct {
             },
 
             '#' => {
-                while (i < N and text[i] != '\n') {
-                    if (text[i] == '\\') {
-                        i += 1;
-                        if (i < N) i += 1;
-                        continue;
+                while (i < N) {
+                    switch (text[i]) {
+                        '\n' => break,
+                        '\\' => i = @max(i + 1, stripLineEscape(text, i)),
+                        '/' => i = @max(i + 1, stripComment(text, i)),
+                        else => i += 1,
                     }
-                    i += 1;
                 }
 
                 return self.token(.preprocessor, i);
@@ -1576,6 +1551,37 @@ pub const Tokenizer = struct {
         return map.get(identifier) orelse .identifier;
     }
 };
+
+fn stripLineEscape(text: []const u8, start: u32) u32 {
+    if (std.mem.startsWith(u8, text[start..], "\\\n")) return start + 2;
+    if (std.mem.startsWith(u8, text[start..], "\\\r\n")) return start + 3;
+    return start;
+}
+
+fn stripComment(text: []const u8, start: u32) u32 {
+    var i = start;
+
+    if (std.mem.startsWith(u8, text[i..], "//")) {
+        i += 2;
+        while (i < text.len) {
+            switch (text[i]) {
+                '\n' => break,
+                '\\' => i = @max(i + 1, stripLineEscape(text, i)),
+                else => i += 1,
+            }
+        }
+    } else if (std.mem.startsWith(u8, text[i..], "/*")) {
+        i += 2;
+        while (i < text.len) : (i += 1) {
+            if (std.mem.startsWith(u8, text[i..], "*/")) {
+                i += 2;
+                break;
+            }
+        }
+    }
+
+    return i;
+}
 
 fn stripPrefix(text: []const u8, prefix: []const u8) ?[]const u8 {
     return if (std.mem.startsWith(u8, text, prefix)) text[prefix.len..] else null;
