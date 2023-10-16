@@ -385,6 +385,7 @@ pub const Parser = struct {
     allocator: std.mem.Allocator,
     tokenizer: Tokenizer,
     next: Node,
+    last_end: u32 = 0,
     fuel: u32 = max_fuel,
 
     deferred_error: ?Error = null,
@@ -463,6 +464,7 @@ pub const Parser = struct {
                     }
                 },
                 else => {
+                    self.last_end = self.next.span.end;
                     self.next = token;
                     self.fuel = max_fuel;
                     return;
@@ -509,7 +511,10 @@ pub const Parser = struct {
 
     fn emitError(self: *@This(), message: []const u8) void {
         self.emitDiagnostic(.{
-            .span = self.next.getToken() orelse unreachable,
+            .span = .{
+                .start = self.last_end,
+                .end = self.last_end,
+            },
             .message = message,
         });
 
@@ -520,7 +525,7 @@ pub const Parser = struct {
     fn advanceWithError(self: *@This(), message: []const u8) void {
         const m = self.open();
         self.emitDiagnostic(.{
-            .span = self.next.getToken() orelse unreachable,
+            .span = self.next.span,
             .message = message,
         });
         self.advance();
@@ -1415,7 +1420,19 @@ pub const Tokenizer = struct {
             },
             '/' => switch (getOrZero(text, i + 1)) {
                 '/' => {
-                    while (i < text.len and text[i] != '\n') i += 1;
+                    while (i < text.len) {
+                        switch (text[i]) {
+                            '\n' => break,
+                            '\\' => {
+                                if (getOrZero(text, i + 1) == '\n') {
+                                    i += 2;
+                                } else {
+                                    i += 1;
+                                }
+                            },
+                            else => i += 1,
+                        }
+                    }
                     return self.token(.comment, i);
                 },
                 '*' => {
