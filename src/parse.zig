@@ -752,6 +752,7 @@ fn statement(p: *Parser) void {
     const m = p.open();
 
     switch (p.peek()) {
+        .@";" => return p.advance(),
         .@"{" => return block(p),
         .keyword_do => {
             p.advance();
@@ -771,7 +772,7 @@ fn statement(p: *Parser) void {
             {
                 const m_cond = p.open();
                 p.expect(.@"(");
-                expression(p);
+                condition(p);
                 p.expect(.@")");
                 p.close(m_cond, .condition_list);
             }
@@ -782,8 +783,8 @@ fn statement(p: *Parser) void {
             {
                 const m_cond = p.open();
                 p.expect(.@"(");
-                if (!p.eat(.@";")) statement(p);
-                if (!p.eat(.@";")) statement(p);
+                if (!p.eat(.@";")) conditionStatement(p);
+                if (!p.eat(.@";")) conditionStatement(p);
                 _ = expressionOpt(p);
                 p.expect(.@")");
                 p.close(m_cond, .condition_list);
@@ -797,7 +798,7 @@ fn statement(p: *Parser) void {
                 {
                     const m_cond = p.open();
                     p.expect(.@"(");
-                    expression(p);
+                    condition(p);
                     p.expect(.@")");
                     p.close(m_cond, .condition_list);
                 }
@@ -820,7 +821,7 @@ fn statement(p: *Parser) void {
             {
                 const m_cond = p.open();
                 p.expect(.@"(");
-                expression(p);
+                condition(p);
                 p.expect(.@")");
                 p.close(m_cond, .condition_list);
             }
@@ -847,25 +848,52 @@ fn statement(p: *Parser) void {
             p.expect(.@";");
         },
         else => {
-            var is_decl = false;
-
-            if (p.atAny(type_qualifier_first)) {
-                typeQualifier(p);
-                typeSpecifier(p);
-                is_decl = true;
-            } else {
-                if (!expressionOpt(p)) p.emitError("expected a statement");
-            }
-
-            if (variableDeclarationList(p) > 0) is_decl = true;
-
+            const kind = simpleStatement(p);
             p.expect(.@";");
-
-            if (is_decl) return p.close(m, .declaration);
+            if (kind == .declaration) return p.close(m, .declaration);
         },
     }
 
     p.close(m, .statement);
+}
+
+fn conditionStatement(p: *Parser) void {
+    const m = p.open();
+    const kind = simpleStatement(p);
+    p.expect(.@";");
+    if (kind == .declaration) return p.close(m, .declaration);
+}
+
+fn condition(p: *Parser) void {
+    const m = p.open();
+    switch (simpleStatement(p)) {
+        .declaration => p.close(m, .declaration),
+        .expression => {},
+    }
+}
+
+fn simpleStatement(p: *Parser) enum { declaration, expression } {
+    var is_decl = false;
+    var has_specifier = false;
+
+    if (p.atAny(type_qualifier_first)) {
+        typeQualifier(p);
+        typeSpecifier(p);
+        is_decl = true;
+        has_specifier = true;
+    } else {
+        if (!expressionOpt(p)) p.emitError("expected a statement");
+
+        const tags = p.stack.items(.tag);
+        has_specifier = switch (tags[tags.len - 1]) {
+            .array_specifier, .struct_specifier, .identifier => true,
+            else => false,
+        };
+    }
+
+    if (has_specifier and variableDeclarationList(p) > 0) is_decl = true;
+
+    return if (is_decl) .declaration else .expression;
 }
 
 fn variableDeclarationList(p: *Parser) u32 {
@@ -887,7 +915,7 @@ fn variableDeclaration(p: *Parser) void {
 fn variableDeclarationSuffix(p: *Parser, m_var: Parser.Mark) void {
     if (p.at(.@"[")) arraySpecifier(p, m_var);
     if (p.eat(.@"=")) initializer(p);
-    if (!p.at(.@";")) p.expect(.@",");
+    if (!p.at(.@";") and !p.at(.@")")) p.expect(.@",");
     p.close(m_var, .variable_declaration);
 }
 
