@@ -1324,8 +1324,8 @@ pub const Tokenizer = struct {
                 // decimal/octal
                 while (i < N and std.ascii.isDigit(text[i])) i += 1;
 
-                if (i < N and (text[i] == 'u' or text[i] == 'U')) {
-                    // unsigned (cannot be float)
+                if (i < N and std.mem.indexOfScalar(u8, "uUsSlL", text[i]) != null) {
+                    // integer suffix (unsigned, short, long)
                     i += 1;
                     return self.token(.number, i);
                 }
