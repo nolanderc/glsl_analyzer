@@ -1350,9 +1350,7 @@ pub const Tokenizer = struct {
 
                 if (i < N and (text[i] == 'f' or text[i] == 'F')) {
                     i += 1;
-                } else if (i + 1 < N and (std.mem.startsWith(u8, text[i..], "lf") or
-                    std.mem.startsWith(u8, text[i..], "LF")))
-                {
+                } else if (std.ascii.startsWithIgnoreCase(text[i..], "lf")) {
                     i += 2;
                 }
 
