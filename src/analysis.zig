@@ -192,7 +192,7 @@ pub fn findDefinition(
     document: *Document,
     node: u32,
     references: *std.ArrayList(Reference),
-) !void {
+) error{OutOfMemory}!void {
     const parse_tree = try document.parseTree();
     const tree = parse_tree.tree;
 
@@ -201,7 +201,10 @@ pub fn findDefinition(
     var symbols = std.ArrayList(Reference).init(arena);
     defer symbols.deinit();
 
-    try visibleSymbols(arena, document, node, &symbols);
+    try visibleFields(arena, document, node, &symbols);
+    if (symbols.items.len == 0) {
+        try visibleSymbols(arena, document, node, &symbols);
+    }
 
     for (symbols.items) |symbol| {
         if (std.mem.eql(u8, name, symbol.name())) {
@@ -358,17 +361,16 @@ pub const Scope = struct {
     }
 
     pub fn isActive(self: *const @This(), scope: ScopeId) bool {
-        for (self.active_scopes.items) |active| {
-            if (scope == active) return true;
-        }
-        return false;
+        return std.mem.lastIndexOfScalar(ScopeId, self.active_scopes.items, scope) != null;
     }
 
     pub fn getVisible(self: *const @This(), symbols: *std.ArrayList(Reference)) !void {
         try symbols.ensureUnusedCapacity(self.symbols.count());
         for (self.symbols.values()) |*value| {
+            const first_scope = value.scope;
             var current: ?*Symbol = value;
             while (current) |symbol| : (current = symbol.shadowed) {
+                if (symbol.scope != first_scope) break;
                 if (!self.isActive(symbol.scope)) continue;
                 try symbols.append(symbol.reference);
             }
@@ -401,9 +403,12 @@ pub fn visibleSymbols(
         }
     }
 
-    try collectLocalSymbols(arena, &scope, start_document, start_node);
-
-    try scope.getVisible(symbols);
+    {
+        try scope.begin();
+        defer scope.end();
+        try collectLocalSymbols(arena, &scope, start_document, start_node);
+        try scope.getVisible(symbols);
+    }
 }
 
 fn collectLocalSymbols(
