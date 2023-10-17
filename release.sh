@@ -2,20 +2,15 @@
 
 set -e
 
-targets=(
-    x86_64-linux-musl
-    aarch64-linux-musl
-    x86_64-macos
-    aarch64-macos
-    x86_64-windows
-    aarch64-windows
-)
+rm -rf "zig-out/release"
+rm -rf "zig-out/archives"
+
+zig build release -Doptimize=ReleaseSafe --prefix "zig-out/release" --verbose
 
 mkdir -p "zig-out/archives"
 
-for target in ${targets[@]}; do
-    echo "building $target..."
-    mkdir -p "zig-out/$target"
-    zig build -Dtarget=$target -Doptimize=ReleaseSafe --prefix "zig-out/$target"
-    (cd "zig-out/$target/" && zip -r "../archives/$target.zip" *)
+for target_path in zig-out/release/*; do
+    target=$(basename "$target_path")
+    echo "archiving $target..."
+    (cd "zig-out/release/$target/" && zip -r "../../archives/$target.zip" *)
 done
