@@ -192,7 +192,7 @@ pub fn findDefinition(
     document: *Document,
     node: u32,
     references: *std.ArrayList(Reference),
-) error{OutOfMemory}!void {
+) anyerror!void {
     const parse_tree = try document.parseTree();
     const tree = parse_tree.tree;
 
