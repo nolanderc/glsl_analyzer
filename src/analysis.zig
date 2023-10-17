@@ -168,12 +168,10 @@ fn expectTypeFormat(source: []const u8, types: []const []const u8) !void {
     if (cursors.count() != types.len) return error.InvalidCursorCount;
 
     for (types, cursors.values()) |expected, cursor| {
-        if (cursor.usages.len != 0) return error.DuplicateCursor;
-
         var references = std.ArrayList(Reference).init(allocator);
         defer references.deinit();
 
-        try findDefinition(allocator, document, cursor.definition, &references);
+        try findDefinition(allocator, document, cursor.node, &references);
         if (references.items.len != 1) return error.InvalidReference;
         const ref = references.items[0];
 
@@ -373,12 +371,19 @@ pub const Scope = struct {
     pub fn getVisible(self: *const @This(), symbols: *std.ArrayList(Reference)) !void {
         try symbols.ensureUnusedCapacity(self.symbols.count());
         for (self.symbols.values()) |*value| {
-            const first_scope = value.scope;
+            var first_scope: ?u32 = null;
             var current: ?*Symbol = value;
             while (current) |symbol| : (current = symbol.shadowed) {
-                if (symbol.scope != first_scope) break;
                 if (!self.isActive(symbol.scope)) continue;
+
+                // symbols from parent scopes are shadowed by the first scope
+                first_scope = first_scope orelse symbol.scope;
+                if (symbol.scope != first_scope) break;
+
                 try symbols.append(symbol.reference);
+
+                // only symbols in global scope can be overloaded
+                if (symbol.scope != 0) break;
             }
         }
     }
@@ -637,75 +642,107 @@ fn nodeName(tree: Tree, node: u32, source: []const u8) ?[]const u8 {
 }
 
 test "find definition local variable" {
-    try expectDefinitionIsFound(
+    try expectDefinition(
         \\void main() {
-        \\    int /*1*/x = 1;
+        \\    int /*2*/x = 1;
         \\    /*1*/x += 2;
         \\}
-    );
-    try expectDefinitionIsFound(
+    , &.{
+        .{ .source = "/*1*/", .target = "/*2*/", .should_exist = true },
+    });
+    try expectDefinition(
         \\void main() {
-        \\    for (int /*1*/i = 0; i < 10; i++) {
+        \\    for (int /*2*/i = 0; i < 10; i++) {
         \\         /*1*/i += 1;
         \\    }
         \\}
-    );
+    , &.{
+        .{ .source = "/*1*/", .target = "/*2*/", .should_exist = true },
+    });
+    try expectDefinition(
+        \\void main() {
+        \\    int /*3*/foo;
+        \\    {
+        \\        float /*2*/foo;
+        \\        /*1*/foo;
+        \\    }
+        \\}
+    , &.{
+        .{ .source = "/*1*/", .target = "/*2*/", .should_exist = true },
+        .{ .source = "/*1*/", .target = "/*3*/", .should_exist = false },
+    });
 }
 
 test "find definition parameter" {
-    try expectDefinitionIsFound(
-        \\int bar(int /*1*/x) {
+    try expectDefinition(
+        \\int bar(int /*2*/x) {
         \\    return /*1*/x;
         \\}
-    );
-    try expectDefinitionIsNotFound(
-        \\int foo(int /*1*/x) { return x; }
+    , &.{
+        .{ .source = "/*1*/", .target = "/*2*/", .should_exist = true },
+    });
+    try expectDefinition(
+        \\int foo(int /*2*/x) { return x; }
         \\int bar() {
         \\    return /*1*/x;
         \\}
-    );
+    , &.{
+        .{ .source = "/*1*/", .target = "/*2*/", .should_exist = false },
+    });
 }
 
 test "find definition function" {
-    try expectDefinitionIsFound(
-        \\void /*1*/foo() {}
+    try expectDefinition(
+        \\void /*3*/foo(int x) {}
+        \\void /*2*/foo() {}
         \\void main() {
         \\    /*1*/foo();
         \\}
-    );
-    try expectDefinitionIsFound(
-        \\void foo() {}
+    , &.{
+        .{ .source = "/*1*/", .target = "/*2*/", .should_exist = true },
+        .{ .source = "/*1*/", .target = "/*3*/", .should_exist = true },
+    });
+    try expectDefinition(
+        \\void /*3*/foo() {}
         \\void main() {
-        \\    int /*1*/foo = 123;
+        \\    int /*2*/foo = 123;
         \\    /*1*/foo();
         \\}
-    );
+    , &.{
+        .{ .source = "/*1*/", .target = "/*2*/", .should_exist = true },
+        .{ .source = "/*1*/", .target = "/*3*/", .should_exist = false },
+    });
 }
 
 test "find definition global" {
-    try expectDefinitionIsFound(
-        \\layout(location = 1) uniform vec4 /*1*/color;
+    try expectDefinition(
+        \\layout(location = 1) uniform vec4 /*2*/color;
         \\void main() {
         \\    /*1*/color;
         \\}
-    );
-    try expectDefinitionIsFound(
-        \\layout(location = 1) uniform MyBlock { vec4 color; } /*1*/my_block;
+    , &.{
+        .{ .source = "/*1*/", .target = "/*2*/", .should_exist = true },
+    });
+    try expectDefinition(
+        \\layout(location = 1) uniform MyBlock { vec4 /*4*/color; } /*2*/my_block;
         \\void main() {
-        \\    color;
+        \\    /*3*/color;
         \\    /*1*/my_block;
         \\}
-    );
-    try expectDefinitionIsNotFound(
-        \\layout(location = 1) uniform MyBlock { vec4 /*1*/color; } my_block;
-        \\void main() {
-        \\    /*1*/color;
-        \\    my_block;
-        \\}
-    );
+    , &.{
+        .{ .source = "/*1*/", .target = "/*2*/", .should_exist = true },
+        .{ .source = "/*3*/", .target = "/*4*/", .should_exist = false },
+    });
 }
 
-fn expectDefinitionIsFound(source: []const u8) !void {
+fn expectDefinition(
+    source: []const u8,
+    cases: []const struct {
+        source: []const u8,
+        target: []const u8,
+        should_exist: bool,
+    },
+) !void {
     var workspace = try Workspace.init(std.testing.allocator);
     defer workspace.deinit();
 
@@ -718,73 +755,63 @@ fn expectDefinitionIsFound(source: []const u8) !void {
     var cursors = try findCursors(document);
     defer cursors.deinit();
 
-    for (cursors.values()) |cursor| {
-        for (cursor.usages.slice()) |usage| {
-            var references = std.ArrayList(Reference).init(workspace.allocator);
-            defer references.deinit();
-            try findDefinition(arena.allocator(), document, usage, &references);
-            if (references.items.len == 0) return error.ReferenceNotFound;
-            if (references.items.len > 1) return error.MultipleDefinitions;
-            const ref = references.items[0];
-            try std.testing.expectEqual(document, ref.document);
-            try std.testing.expectEqual(cursor.definition, ref.node);
-        }
-    }
-}
+    for (cases) |case| {
+        const usage = cursors.get(case.source) orelse std.debug.panic("invalid cursor: {s}", .{case.source});
+        const definition = cursors.get(case.target) orelse std.debug.panic("invalid cursor: {s}", .{case.source});
 
-fn expectDefinitionIsNotFound(source: []const u8) !void {
-    var workspace = try Workspace.init(std.testing.allocator);
-    defer workspace.deinit();
+        var references = std.ArrayList(Reference).init(workspace.allocator);
+        defer references.deinit();
+        try findDefinition(arena.allocator(), document, usage.node, &references);
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    const document = try workspace.getOrCreateDocument(.{ .uri = "file://test.glsl", .version = 0 });
-    try document.replaceAll(source);
-
-    var cursors = try findCursors(document);
-    defer cursors.deinit();
-
-    for (cursors.values()) |cursor| {
-        for (cursor.usages.slice()) |usage| {
-            var references = std.ArrayList(Reference).init(workspace.allocator);
-            defer references.deinit();
-            try findDefinition(arena.allocator(), document, usage, &references);
-            if (references.items.len != 0) {
-                const ref = references.items[0];
-                std.debug.print("found unexpected reference: {s}:{}\n", .{ ref.document.path, ref.node });
-                return error.FoundUnexpectedReference;
+        var found_definition = false;
+        for (references.items) |reference| {
+            if (reference.document == document and reference.node == definition.node) {
+                found_definition = true;
+                break;
             }
+        }
+
+        if (case.should_exist and !found_definition) {
+            std.log.err(
+                "{s} did not find {s}:\n================\n{s}\n================",
+                .{ case.source, case.target, source },
+            );
+        }
+
+        if (!case.should_exist and found_definition) {
+            std.log.err(
+                "{s} did find {s}:\n================\n{s}\n================",
+                .{ case.source, case.target, source },
+            );
         }
     }
 }
 
 const Cursor = struct {
-    definition: u32,
-    usages: std.BoundedArray(u32, 4) = .{},
+    node: u32,
 };
 
 fn findCursors(document: *Document) !std.StringArrayHashMap(Cursor) {
     const parsed = try document.parseTree();
     const tree = &parsed.tree;
 
-    var cursors = std.StringArrayHashMap(Cursor).init(document.workspace.allocator);
+    var cursors = std.StringArrayHashMap(Cursor).init(std.testing.allocator);
     errdefer cursors.deinit();
 
-    for (0..tree.nodes.len) |index| {
-        const node = tree.nodes.get(index);
-        const token = node.getToken() orelse continue;
-        for (parsed.ignored) |cursor| {
+    for (parsed.ignored) |cursor| {
+        for (tree.nodes.items(.span), tree.nodes.items(.tag), 0..) |token, tag, index| {
+            if (tag.isSyntax()) continue;
             if (cursor.end == token.start) {
-                const result = try cursors.getOrPut(
+                try cursors.putNoClobber(
                     document.source()[cursor.start..cursor.end],
+                    .{ .node = @intCast(index) },
                 );
-                if (result.found_existing) {
-                    try result.value_ptr.usages.append(@intCast(index));
-                } else {
-                    result.value_ptr.* = .{ .definition = @intCast(index) };
-                }
+                break;
             }
+        } else {
+            std.debug.panic("cursor not found: \"{}\"", .{
+                std.zig.fmtEscapes(document.source()[cursor.start..cursor.end]),
+            });
         }
     }
 
