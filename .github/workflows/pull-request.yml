@@ -5,7 +5,16 @@ on:
 permissions:
   contents: write
 jobs:
-  build-artifacts:
+  build-pull-request:
+    strategy:
+      matrix:
+        target:
+          - "x86_64-linux-musl"
+          - "aarch64-linux-musl"
+          - "x86_64-macos"
+          - "aarch64-macos"
+          - "x86_64-windows"
+          - "aarch64-windows"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -14,9 +23,21 @@ jobs:
         with:
           version: 0.12.0-dev.790+ad6f8e3a5
       - name: Build
-        run: zig build release -Doptimize=Debug
+        run: zig build -Dtarget=${{ matrix.target }}
+  test-pull-request:
+    strategy:
+      matrix:
+        os:
+          - "ubuntu-latest"
+          - "windows-latest"
+          - "macos-latest"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v2.1.1
+        with:
+          version: 0.12.0-dev.790+ad6f8e3a5
       - name: Test
         run: zig build test
           
-
-
