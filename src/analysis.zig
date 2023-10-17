@@ -735,6 +735,22 @@ test "find definition global" {
     });
 }
 
+test "find definition field" {
+    try expectDefinition(
+        \\struct Foo { int /*1*/bar, /*2*/baz; };
+        \\void main() {
+        \\    Foo foo;
+        \\    foo./*3*/bar;
+        \\    foo./*4*/baz;
+        \\}
+    , &.{
+        .{ .source = "/*3*/", .target = "/*1*/", .should_exist = true },
+        .{ .source = "/*3*/", .target = "/*2*/", .should_exist = false },
+        .{ .source = "/*4*/", .target = "/*1*/", .should_exist = false },
+        .{ .source = "/*4*/", .target = "/*2*/", .should_exist = true },
+    });
+}
+
 fn expectDefinition(
     source: []const u8,
     cases: []const struct {
