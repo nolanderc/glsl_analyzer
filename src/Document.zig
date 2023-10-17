@@ -83,23 +83,8 @@ pub fn nodeRange(self: *@This(), node: u32) !lsp.Range {
     };
 }
 
-pub fn wordUnderCursor(self: *@This(), cursor: lsp.Position) []const u8 {
-    const offset = self.utf8FromPosition(cursor);
-    const bytes = self.contents.items;
-
-    if (!isIdentifierChar(bytes[offset])) return "";
-
-    var start = offset;
-    var end = offset;
-
-    while (start > 0 and isIdentifierChar(bytes[start - 1])) start -= 1;
-    while (end < bytes.len and isIdentifierChar(bytes[end])) end += 1;
-
-    return bytes[start..end];
-}
-
 /// Return the node right under the cursor.
-pub fn nodeUnderCursor(self: *@This(), cursor: lsp.Position) !?u32 {
+pub fn tokenUnderCursor(self: *@This(), cursor: lsp.Position) !?u32 {
     const offset = self.utf8FromPosition(cursor);
     const parsed = try self.parseTree();
     const tree = parsed.tree;
@@ -114,7 +99,7 @@ pub fn nodeUnderCursor(self: *@This(), cursor: lsp.Position) !?u32 {
 }
 
 /// Return the node closest to left of the cursor.
-pub fn nodeBeforeCursor(self: *@This(), cursor: lsp.Position) !?u32 {
+pub fn tokenBeforeCursor(self: *@This(), cursor: lsp.Position) !?u32 {
     const offset = self.utf8FromPosition(cursor);
     const parsed = try self.parseTree();
     const tree = parsed.tree;
