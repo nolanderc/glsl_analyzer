@@ -226,20 +226,20 @@ fn inFileRoot(tree: Tree, node: u32) bool {
 pub fn visibleFields(
     arena: std.mem.Allocator,
     document: *Document,
-    node: u32,
+    start_node: u32,
     symbols: *std.ArrayList(Reference),
 ) !void {
     const name = blk: {
         const parsed = try document.parseTree();
-        const tag = parsed.tree.tag(node);
+        const tag = parsed.tree.tag(start_node);
         if (tag != .identifier and tag != .@".") return;
 
-        const parent = parsed.tree.parent(node) orelse return;
+        const parent = parsed.tree.parent(start_node) orelse return;
         const parent_tag = parsed.tree.tag(parent);
         if (parent_tag != .selection) return;
 
         const children = parsed.tree.children(parent);
-        if (node == children.start) return;
+        if (start_node == children.start) return;
 
         var first = children.start;
         while (parsed.tree.tag(first).isSyntax()) {
@@ -249,6 +249,11 @@ pub fn visibleFields(
         }
         break :blk first;
     };
+
+    if (start_node == name) {
+        // possible infinite loop if we are coming from `findDefinition`
+        return;
+    }
 
     var name_definitions = std.ArrayList(Reference).init(arena);
     try findDefinition(arena, document, name, &name_definitions);
@@ -284,6 +289,7 @@ pub fn visibleFields(
                     },
                     else => {
                         const identifier = specifier.underlyingName(tree) orelse continue;
+                        if (identifier.node == start_node) continue;
                         try findDefinition(arena, reference.document, identifier.node, &references);
                     },
                 }
