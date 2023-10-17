@@ -41,4 +41,4 @@ generate-spec:
     cd spec && just
 
 release:
-    ./release.sh
+    zig build release {{flags}}
