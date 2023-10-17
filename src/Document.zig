@@ -113,7 +113,7 @@ pub fn tokenBeforeCursor(self: *@This(), cursor: lsp.Position) !?u32 {
             if (span.start == span.end) continue;
 
             // ignore tokens after the cursor
-            if (offset < span.start) continue;
+            if (offset <= span.start) continue;
 
             if (span.end > best_end) {
                 // found a token further to the right
