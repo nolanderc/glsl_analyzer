@@ -645,7 +645,7 @@ pub const Dispatch = struct {
         const document = try getDocumentOrFail(state, request, params.value.textDocument);
         const parsed = try document.parseTree();
 
-        const token = try document.tokenUnderCursor(params.value.position) orelse {
+        const token = try document.identifierUnderCursor(params.value.position) orelse {
             return state.success(request.id, null);
         };
 
@@ -749,7 +749,7 @@ pub const Dispatch = struct {
         });
 
         const document = try state.workspace.getOrLoadDocument(params.value.textDocument);
-        const source_node = try document.tokenUnderCursor(params.value.position) orelse {
+        const source_node = try document.identifierUnderCursor(params.value.position) orelse {
             std.log.debug("no node under cursor", .{});
             return state.success(request.id, null);
         };
