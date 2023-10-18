@@ -188,7 +188,14 @@ pub const ExpressionUnion = union(enum) {
     identifier: Token(.identifier),
     number: Token(.number),
     array: ArraySpecifier(Expression),
+    selection: Selection,
 };
+
+pub const Selection = Extractor(.selection, struct {
+    target: Expression,
+    @".": Token(.@"."),
+    field: Token(.identifier),
+});
 
 pub fn Token(comptime tag: Tag) type {
     comptime std.debug.assert(tag.isToken());

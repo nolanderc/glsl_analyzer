@@ -227,35 +227,34 @@ pub fn visibleFields(
     start_node: u32,
     symbols: *std.ArrayList(Reference),
 ) !void {
-    const name = blk: {
+    const lhs = lhs: {
         const parsed = try document.parseTree();
-        const tag = parsed.tree.tag(start_node);
+        const tree = parsed.tree;
+
+        const tag = tree.tag(start_node);
         if (tag != .identifier and tag != .@".") return;
 
-        const parent = parsed.tree.parent(start_node) orelse return;
-        const parent_tag = parsed.tree.tag(parent);
-        if (parent_tag != .selection) return;
+        const parent = tree.parent(start_node) orelse return;
+        const selection = syntax.Selection.tryExtract(tree, parent) orelse return;
+        var target = selection.get(.target, tree) orelse return;
 
-        const children = parsed.tree.children(parent);
-        if (start_node == children.start) return;
-
-        var first = children.start;
-        while (parsed.tree.tag(first).isSyntax()) {
-            const grand_children = parsed.tree.children(first);
-            if (grand_children.start == grand_children.end) return;
-            first = grand_children.start;
+        while (true) {
+            switch (target.get(tree)) {
+                .identifier => break :lhs target.node,
+                .selection => |select| break :lhs select.nodeOf(.field, tree) orelse return,
+                .array => |array| target = array.prefix(tree) orelse return,
+                .number => return,
+            }
         }
-        break :blk first;
     };
 
-    if (start_node == name) {
+    if (lhs == start_node) {
         // possible infinite loop if we are coming from `findDefinition`
         return;
     }
 
     var name_definitions = std.ArrayList(Reference).init(arena);
-    try findDefinition(arena, document, name, &name_definitions);
-    if (name_definitions.items.len == 0) return;
+    try findDefinition(arena, document, lhs, &name_definitions);
 
     var references = std.ArrayList(Reference).init(document.workspace.allocator);
     defer references.deinit();
@@ -801,6 +800,22 @@ test "find definition field" {
     });
 }
 
+test "find definition field recursive" {
+    try expectDefinition(
+        \\struct Foo { int /*1*/foo; };
+        \\struct Bar { Foo /*2*/bar; };
+        \\void main() {
+        \\    Bar baz;
+        \\    baz./*3*/bar./*4*/foo;
+        \\}
+    , &.{
+        .{ .source = "/*3*/", .target = "/*1*/", .should_exist = false },
+        .{ .source = "/*3*/", .target = "/*2*/", .should_exist = true },
+        .{ .source = "/*4*/", .target = "/*1*/", .should_exist = true },
+        .{ .source = "/*4*/", .target = "/*2*/", .should_exist = false },
+    });
+}
+
 test "find definition self" {
     try expectDefinition(
         \\void main(int /*1*/whatever) {
@@ -885,11 +900,6 @@ fn expectDefinition(
 
     if (print_source) {
         std.debug.print("================\n{s}\n================\n", .{source});
-        const parsed = try document.parseTree();
-        std.debug.print(
-            "================\n{}\n================\n",
-            .{parsed.tree.format(document.source())},
-        );
     }
 }
 
