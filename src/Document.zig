@@ -84,13 +84,13 @@ pub fn nodeRange(self: *@This(), node: u32) !lsp.Range {
 }
 
 /// Return the node right under the cursor.
-pub fn tokenUnderCursor(self: *@This(), cursor: lsp.Position) !?u32 {
+pub fn identifierUnderCursor(self: *@This(), cursor: lsp.Position) !?u32 {
     const offset = self.utf8FromPosition(cursor);
     const parsed = try self.parseTree();
     const tree = parsed.tree;
 
     for (0.., tree.nodes.items(.tag), tree.nodes.items(.span)) |index, tag, span| {
-        if (tag.isToken() and span.start <= offset and offset < span.end) {
+        if (tag == .identifier and span.start <= offset and offset <= span.end) {
             return @intCast(index);
         }
     }
