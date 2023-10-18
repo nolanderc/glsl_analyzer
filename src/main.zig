@@ -547,6 +547,12 @@ pub const Dispatch = struct {
 
         const token = try document.tokenBeforeCursor(params.value.position);
 
+        const parsed = try document.parseTree();
+        if (token != null and parsed.tree.tag(token.?) == .comment) {
+            // don't give completions in comments
+            return state.success(request.id, null);
+        }
+
         try completionsAtToken(
             state,
             document,
