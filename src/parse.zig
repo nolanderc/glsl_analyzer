@@ -359,7 +359,7 @@ pub const Tree = struct {
         };
 
         var f = Formatter{ .tree = data.tree, .source = data.source, .writer = writer };
-        try f.writeNode(data.tree.nodes.len - 1);
+        try f.writeNode(data.tree.root);
     }
 };
 
