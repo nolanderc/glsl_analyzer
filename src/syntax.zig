@@ -276,6 +276,12 @@ pub fn Extractor(comptime expected_tag: Tag, comptime T: type) type {
             return .{ .node = node, .matches = matches };
         }
 
+        pub fn nodeOf(self: @This(), comptime field: FieldEnum, tree: Tree) ?u32 {
+            const field_match = @field(self.matches, @tagName(field));
+            const node_offset = field_match.node_offset orelse return null;
+            return tree.children(self.node).start + node_offset;
+        }
+
         pub fn get(self: @This(), comptime field: FieldEnum, tree: Tree) ?std.meta.FieldType(T, field) {
             const field_match = @field(self.matches, @tagName(field));
             const node_offset = field_match.node_offset orelse return null;

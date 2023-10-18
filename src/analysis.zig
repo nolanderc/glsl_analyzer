@@ -435,15 +435,24 @@ fn collectLocalSymbols(
     defer path.deinit(arena);
 
     var closest_declaration: ?u32 = null;
+    var vardecls_before: u32 = std.math.maxInt(u32);
 
     {
         var child = target_node;
         while (tree.parent(child)) |parent| : (child = parent) {
-            if (closest_declaration == null and syntax.AnyDeclaration.match(tree, parent) != null) {
-                closest_declaration = parent;
-            }
-
             try path.append(arena, child);
+
+            if (closest_declaration == null) {
+                if (syntax.VariableDeclaration.tryExtract(tree, parent)) |vardecl| {
+                    var before = vardeclsBeforeInList(tree, vardecl) orelse 0;
+                    before += @intFromBool(child == vardecl.nodeOf(.name, tree));
+                    vardecls_before = before;
+                }
+
+                if (syntax.AnyDeclaration.match(tree, parent) != null) {
+                    closest_declaration = parent;
+                }
+            }
         }
     }
 
@@ -454,36 +463,67 @@ fn collectLocalSymbols(
 
         const children = tree.children(parent);
         var current_child = children.start;
-        while (current_child < target_child or current_child == closest_declaration) : (current_child += 1) {
-            if (syntax.ExternalDeclaration.tryExtract(tree, current_child)) |declaration| {
-                try collectDeclarationSymbols(scope, document, tree, declaration);
-                continue;
-            }
-            if (syntax.ParameterList.tryExtract(tree, current_child)) |parameters| {
-                var iterator = parameters.iterator();
-                while (iterator.next(tree)) |parameter| {
-                    const variable = parameter.get(.variable, tree) orelse continue;
-                    try registerVariables(scope, document, tree, .{ .one = variable }, parameter.node);
-                }
-                continue;
-            }
-            if (syntax.ConditionList.tryExtract(tree, current_child)) |condition_list| {
-                var statements = condition_list.iterator();
-                while (statements.next(tree)) |statement| {
-                    switch (statement) {
-                        .declaration => |declaration| {
-                            try collectDeclarationSymbols(
-                                scope,
-                                document,
-                                tree,
-                                .{ .variable = declaration },
-                            );
-                        },
-                    }
-                }
-                continue;
+        while (current_child < target_child) : (current_child += 1) {
+            try registerLocalDeclaration(scope, document, tree, current_child, .{});
+        }
+
+        if (current_child == closest_declaration) {
+            try registerLocalDeclaration(scope, document, tree, current_child, .{
+                .max_vardecl_count = vardecls_before,
+            });
+        }
+    }
+}
+
+fn vardeclsBeforeInList(tree: Tree, vardecl: syntax.VariableDeclaration) ?u32 {
+    const grandparent = tree.parent(vardecl.node) orelse return null;
+    if (tree.tag(grandparent) != .variable_declaration_list) return null;
+    const first = tree.children(grandparent).start;
+    return vardecl.node - first;
+}
+
+fn registerLocalDeclaration(
+    scope: *Scope,
+    document: *Document,
+    tree: Tree,
+    node: u32,
+    options: CollectOptions,
+) !void {
+    if (syntax.ExternalDeclaration.tryExtract(tree, node)) |declaration| {
+        try collectDeclarationSymbols(scope, document, tree, declaration, options);
+        return;
+    }
+
+    if (syntax.ParameterList.tryExtract(tree, node)) |parameters| {
+        var iterator = parameters.iterator();
+        while (iterator.next(tree)) |parameter| {
+            const variable = parameter.get(.variable, tree) orelse continue;
+            try registerVariables(scope, document, tree, .{ .one = variable }, parameter.node, .{});
+        }
+        return;
+    }
+
+    if (syntax.Parameter.tryExtract(tree, node)) |parameter| {
+        const variable = parameter.get(.variable, tree) orelse return;
+        try registerVariables(scope, document, tree, .{ .one = variable }, parameter.node, options);
+    }
+
+    if (syntax.ConditionList.tryExtract(tree, node)) |condition_list| {
+        var statements = condition_list.iterator();
+        while (statements.next(tree)) |statement| {
+            switch (statement) {
+                .declaration => |declaration| {
+                    try collectDeclarationSymbols(
+                        scope,
+                        document,
+                        tree,
+                        .{ .variable = declaration },
+                        .{},
+                    );
+                },
             }
         }
+        return;
     }
 }
 
@@ -494,15 +534,20 @@ fn collectGlobalSymbols(scope: *Scope, document: *Document) !void {
     const children = tree.children(tree.root);
     for (children.start..children.end) |child| {
         const global = syntax.ExternalDeclaration.tryExtract(tree, @intCast(child)) orelse continue;
-        try collectDeclarationSymbols(scope, document, tree, global);
+        try collectDeclarationSymbols(scope, document, tree, global, .{});
     }
 }
+
+const CollectOptions = struct {
+    max_vardecl_count: u32 = std.math.maxInt(u32),
+};
 
 fn collectDeclarationSymbols(
     scope: *Scope,
     document: *Document,
     tree: parse.Tree,
     external: syntax.ExternalDeclaration,
+    options: CollectOptions,
 ) !void {
     switch (external) {
         .function => |function| {
@@ -518,17 +563,17 @@ fn collectDeclarationSymbols(
             }
 
             const variables = declaration.get(.variables, tree) orelse return;
-            try registerVariables(scope, document, tree, variables, declaration.node);
+            try registerVariables(scope, document, tree, variables, declaration.node, options);
         },
         .block => |block| {
             if (block.get(.variable, tree)) |variable| {
-                try registerVariables(scope, document, tree, .{ .one = variable }, block.node);
+                try registerVariables(scope, document, tree, .{ .one = variable }, block.node, options);
             } else {
                 const fields = block.get(.fields, tree) orelse return;
                 var field_iterator = fields.iterator();
                 while (field_iterator.next(tree)) |field| {
                     const variables = field.get(.variables, tree) orelse continue;
-                    try registerVariables(scope, document, tree, variables, field.node);
+                    try registerVariables(scope, document, tree, variables, field.node, .{});
                 }
             }
         },
@@ -555,9 +600,14 @@ fn registerVariables(
     tree: Tree,
     variables: syntax.Variables,
     declaration: u32,
+    options: CollectOptions,
 ) !void {
+    var max_vardecl_count = options.max_vardecl_count;
     var iterator = variables.iterator();
     while (iterator.next(tree)) |variable| {
+        if (max_vardecl_count == 0) break;
+        max_vardecl_count -= 1;
+
         const name = variable.get(.name, tree) orelse return;
         const ident = name.getIdentifier(tree) orelse return;
         try registerIdentifier(scope, document, tree, ident, declaration);
@@ -751,6 +801,39 @@ test "find definition field" {
     });
 }
 
+test "find definition self" {
+    try expectDefinition(
+        \\void main(int /*1*/whatever) {
+        \\    float /*2*/foo;
+        \\}
+    , &.{
+        .{ .source = "/*1*/", .target = "/*1*/", .should_exist = true },
+        .{ .source = "/*2*/", .target = "/*2*/", .should_exist = true },
+    });
+}
+
+test "find definition self-multi" {
+    try expectDefinition(
+        \\void main() {
+        \\    float /*1*/foo = 123, bar = /*2*/foo;
+        \\}
+    , &.{
+        .{ .source = "/*2*/", .target = "/*1*/", .should_exist = true },
+    });
+}
+
+test "find definition local shadowing" {
+    try expectDefinition(
+        \\void main() {
+        \\    float /*1*/foo;
+        \\    int /*2*/foo = /*3*/foo;
+        \\}
+    , &.{
+        .{ .source = "/*3*/", .target = "/*1*/", .should_exist = true },
+        .{ .source = "/*3*/", .target = "/*2*/", .should_exist = false },
+    });
+}
+
 fn expectDefinition(
     source: []const u8,
     cases: []const struct {
@@ -771,6 +854,8 @@ fn expectDefinition(
     var cursors = try findCursors(document);
     defer cursors.deinit();
 
+    var print_source = false;
+
     for (cases) |case| {
         const usage = cursors.get(case.source) orelse std.debug.panic("invalid cursor: {s}", .{case.source});
         const definition = cursors.get(case.target) orelse std.debug.panic("invalid cursor: {s}", .{case.source});
@@ -788,18 +873,23 @@ fn expectDefinition(
         }
 
         if (case.should_exist and !found_definition) {
-            std.log.err(
-                "{s} did not find {s}:\n================\n{s}\n================",
-                .{ case.source, case.target, source },
-            );
+            std.log.err("definition not found: {s} -> {s}", .{ case.source, case.target });
+            print_source = true;
         }
 
         if (!case.should_exist and found_definition) {
-            std.log.err(
-                "{s} did find {s}:\n================\n{s}\n================",
-                .{ case.source, case.target, source },
-            );
+            std.log.err("unexpected definition: {s} -> {s}", .{ case.source, case.target });
+            print_source = true;
         }
+    }
+
+    if (print_source) {
+        std.debug.print("================\n{s}\n================\n", .{source});
+        const parsed = try document.parseTree();
+        std.debug.print(
+            "================\n{}\n================\n",
+            .{parsed.tree.format(document.source())},
+        );
     }
 }
 
