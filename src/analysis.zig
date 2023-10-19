@@ -367,9 +367,25 @@ pub const Scope = struct {
         return std.mem.lastIndexOfScalar(ScopeId, self.active_scopes.items, scope) != null;
     }
 
-    pub fn getVisible(self: *const @This(), symbols: *std.ArrayList(Reference)) !void {
+    pub fn getVisible(
+        self: *const @This(),
+        symbols: *std.ArrayList(Reference),
+        options: struct {
+            /// An allocator used to detect duplicates.
+            duplicate_allocator: std.mem.Allocator,
+        },
+    ) !void {
+        var functions = std.StringHashMap(void).init(options.duplicate_allocator);
+        defer functions.deinit();
+
+        var arena = std.heap.ArenaAllocator.init(options.duplicate_allocator);
+        defer arena.deinit();
+
         try symbols.ensureUnusedCapacity(self.symbols.count());
         for (self.symbols.values()) |*value| {
+            defer functions.clearRetainingCapacity();
+            defer _ = arena.reset(.retain_capacity);
+
             var first_scope: ?u32 = null;
             var current: ?*Symbol = value;
             while (current) |symbol| : (current = symbol.shadowed) {
@@ -379,12 +395,47 @@ pub const Scope = struct {
                 first_scope = first_scope orelse symbol.scope;
                 if (symbol.scope != first_scope) break;
 
+                if (try functionParameterSignature(
+                    arena.allocator(),
+                    symbol.reference,
+                )) |signature| {
+                    const result = try functions.getOrPut(signature);
+                    if (result.found_existing) continue;
+                }
+
                 try symbols.append(symbol.reference);
 
                 // only symbols in global scope can be overloaded
                 if (symbol.scope != 0) break;
             }
         }
+    }
+
+    fn functionParameterSignature(allocator: std.mem.Allocator, reference: Reference) !?[]u8 {
+        const document = reference.document;
+        const parsed = try document.parseTree();
+        const tree = parsed.tree;
+        const decl_node = reference.parent_declaration;
+
+        const func = syntax.FunctionDeclaration.tryExtract(tree, decl_node) orelse return null;
+        const parameters = func.get(.parameters, tree) orelse return null;
+
+        var signature = std.ArrayList(u8).init(allocator);
+        errdefer signature.deinit();
+
+        try signature.appendSlice("(");
+
+        var i: usize = 0;
+        var iterator = parameters.iterator();
+        while (iterator.next(tree)) |parameter| : (i += 1) {
+            if (i != 0) try signature.appendSlice(", ");
+            const typ = parameterType(parameter, tree);
+            try signature.writer().print("{}", .{typ.format(tree, document.source())});
+        }
+
+        try signature.appendSlice(")");
+
+        return try signature.toOwnedSlice();
     }
 };
 
@@ -417,7 +468,7 @@ pub fn visibleSymbols(
         try scope.begin();
         defer scope.end();
         try collectLocalSymbols(arena, &scope, start_document, start_node);
-        try scope.getVisible(symbols);
+        try scope.getVisible(symbols, .{ .duplicate_allocator = arena });
     }
 }
 
@@ -846,6 +897,21 @@ test "find definition local shadowing" {
     , &.{
         .{ .source = "/*3*/", .target = "/*1*/", .should_exist = true },
         .{ .source = "/*3*/", .target = "/*2*/", .should_exist = false },
+    });
+}
+
+test "find definition duplicate overload" {
+    try expectDefinition(
+        \\float /*1*/add(float a, float b);
+        \\int /*2*/add(int a, int b);
+        \\void main() {
+        \\    /*3*/add(1, 2);
+        \\}
+        \\int /*4*/add(int a, int b) { return a + b; }
+    , &.{
+        .{ .source = "/*3*/", .target = "/*1*/", .should_exist = true },
+        .{ .source = "/*3*/", .target = "/*2*/", .should_exist = false },
+        .{ .source = "/*2*/", .target = "/*4*/", .should_exist = true },
     });
 }
 
