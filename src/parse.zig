@@ -424,6 +424,9 @@ pub const Parser = struct {
 
         tree.root = @intCast(tree.nodes.len - 1);
 
+        // Append any ignored tokens to the end of the parse tree.
+        // This ensures that we can refer to ignored tokens with the same
+        // mechanisms as any other syntax node.
         if (self.options.ignored) |ignored| {
             const ignored_start = tree.nodes.len;
             try tree.nodes.resize(self.allocator, tree.nodes.len + ignored.items.len);
@@ -1630,6 +1633,8 @@ fn stripPrefix(text: []const u8, prefix: []const u8) ?[]const u8 {
 pub const Directive = union(enum) {
     define: struct { name: Span },
     include: struct { path: Span },
+    version: struct { number: Span },
+    extension: struct { name: Span },
 };
 
 pub fn parsePreprocessorDirective(line: []const u8) ?Directive {
@@ -1668,6 +1673,20 @@ pub fn parsePreprocessorDirective(line: []const u8) ?Directive {
         const path_end = i;
 
         return .{ .include = .{ .path = .{ .start = path_start, .end = path_end } } };
+    }
+
+    if (std.mem.eql(u8, kind, "extension")) {
+        const name_start = i;
+        const name_end = skipIdentifier(i, line);
+        if (name_start == name_end) return null;
+        return .{ .extension = .{ .name = .{ .start = name_start, .end = name_end } } };
+    }
+
+    if (std.mem.eql(u8, kind, "version")) {
+        const number_start = i;
+        const number_end = skipIdentifier(i, line);
+        if (number_start == number_end) return null;
+        return .{ .version = .{ .number = .{ .start = number_start, .end = number_end } } };
     }
 
     return null;

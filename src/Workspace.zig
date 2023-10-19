@@ -163,38 +163,48 @@ fn builtinCompletions(arena: std.mem.Allocator, spec: *const Spec) ![]lsp.Comple
 
         try completions.append(.{
             .label = variable.name,
-            .labelDetails = .{
-                .detail = try signature.toOwnedSlice(),
-            },
+            .labelDetails = .{ .detail = signature.items },
             .kind = .variable,
-            .documentation = if (variable.description) |desc| .{
-                .kind = .markdown,
-                .value = try std.mem.join(arena, "\n\n", desc),
-            } else null,
+            .documentation = try itemDocumentation(arena, variable),
         });
     }
 
     for (spec.functions) |function| {
         var anonymous_signature = std.ArrayList(u8).init(arena);
-        var named_signature = std.ArrayList(u8).init(arena);
         try writeFunctionSignature(function, anonymous_signature.writer(), .{ .names = false });
+
+        var named_signature = std.ArrayList(u8).init(arena);
         try writeFunctionSignature(function, named_signature.writer(), .{ .names = true });
 
         try completions.append(.{
             .label = function.name,
-            .labelDetails = .{
-                .detail = try anonymous_signature.toOwnedSlice(),
-            },
+            .labelDetails = .{ .detail = anonymous_signature.items },
             .kind = .function,
-            .detail = try named_signature.toOwnedSlice(),
-            .documentation = if (function.description) |desc| .{
-                .kind = .markdown,
-                .value = try std.mem.join(arena, "\n\n", desc),
-            } else null,
+            .detail = named_signature.items,
+            .documentation = try itemDocumentation(arena, function),
         });
     }
 
     return completions.toOwnedSlice();
+}
+
+fn itemDocumentation(arena: std.mem.Allocator, item: anytype) !lsp.MarkupContent {
+    var documentation = std.ArrayList(u8).init(arena);
+
+    for (item.description orelse &.{}) |paragraph| {
+        try documentation.appendSlice(paragraph);
+        try documentation.appendSlice("\n\n");
+    }
+
+    if (item.extensions) |extensions| {
+        try documentation.appendSlice("```glsl\n");
+        for (extensions) |extension| {
+            try documentation.writer().print("#extension {s} : enable\n", .{extension});
+        }
+        try documentation.appendSlice("```\n");
+    }
+
+    return .{ .kind = .markdown, .value = try documentation.toOwnedSlice() };
 }
 
 fn writeFunctionSignature(
