@@ -1,6 +1,7 @@
 import os
 import pathlib
 import re
+import typing
 
 import lsprotocol.types as lspt
 
@@ -9,108 +10,22 @@ import pytest_subtests
 import pytest_lsp
 
 
-base_directory = pathlib.Path(__file__).parent.resolve()
-
-
-
-class ExpectFail:
-    """A wrapper class that signals that a test with
-    this particular set of arguments is expected to fail"""
-    def __init__(self, args):
-        self.args = args
-
-
-def unwrap_args(args):
-    """Removes top-level `ExpectFail` if present
-    and returns a boolean indicating whether
-    success is expected as a last tuple element"""
-    if isinstance(args, ExpectFail):
-        return (*args.args, False)
-    else:
-        return (*args, True)
-
-
-class FileToTest:
-    HoverExpectedType = str|None
-    HoverTestArgs     = tuple[int, int, HoverExpectedType]
-
-    def __init__(
-        self,
-        path: str,
-        hover_test_args: tuple[HoverTestArgs|ExpectFail] = (),
-    ):
-        self.path = path
-        self.hover_test_args = hover_test_args
-
-
-
-
-
-files = [
-    FileToTest(
-        path="glsl-samples/well-formed/basic.vert",
-        hover_test_args=(
-            (18, 19, "const vec4"),
-            (20, 20, "Rectangle[4]"),
-            (24, 13, "void (int)"),
-            (35, 13, "vec3"),
-        )
-    ),
-    FileToTest(
-        path="glsl-samples/hover/shadowing.frag",
-        hover_test_args=(
-            ( 4, 11, "int"),
-            ( 5, 11, "const int"),
-            ( 8,  5, "int"),
-            ( 9,  5, "const int"),
-            (13, 23, "const int"),
-            (13, 29, "const int"),
-            (15, 13, "int"),
-            ExpectFail((15, 20, "const int")),
-            (21,  5, "const int"),
-            (22,  5, "int"),
-            (25, 15, "int"),
-            (25, 22, "int"),
-            (26, 15, "const int"),
-            (26, 22, "int"),
-            (28,  5, "const int"),
-            (29,  5, "int"),
-            (35,  5, "const int"),
-            (36,  5, "int"),
-        )
-    ),
-    FileToTest(
-        path="glsl-samples/hover/struct_fields.frag",
-        hover_test_args=(
-            (30,  5, "const AAA"),
-            (31,  5, "const BBB"),
-            (32,  5, "const CCC"),
-            (35,  9, "int"),
-            (36,  9, "float"),
-            (37,  9, "AAA"),
-            ExpectFail((40, 13, "int")),
-            ExpectFail((41, 13, "float")),
-            ExpectFail((42, 13, "uint")),
-            ExpectFail((43, 13, "float")),
-            ExpectFail((44, 13, "int")),
-            ExpectFail((45, 13, "bool")),
-        )
-    )
-]
-
-
-
-
-
-
-
-# This is just setup.
-@pytest_lsp.fixture(
-    config=pytest_lsp.ClientServerConfig(
-        server_command=["glsl_analyzer", "--stdio", "--clientProcessId", str(os.getpid())]
-    )
+from testing_utils import (
+    FileToTest,
+    OpenedFile,
+    TokenKind
 )
+
+import lsp_testing_input
+
+
+
+
+@pytest_lsp.fixture(config=pytest_lsp.ClientServerConfig(
+    server_command=["glsl_analyzer", "--stdio", "--clientProcessId", str(os.getpid())]
+))
 async def client(lsp_client: pytest_lsp.LanguageClient):
+    """A fixtre that carries a fake client."""
     params = lspt.InitializeParams(
         capabilities=lspt.ClientCapabilities(),
         process_id=os.getpid()
@@ -120,22 +35,10 @@ async def client(lsp_client: pytest_lsp.LanguageClient):
     await lsp_client.shutdown_session()
 
 
-
-
-class OpenedFile:
-    def __init__(self, file: FileToTest, identifier: lspt.TextDocumentIdentifier):
-        self.file       = file
-        self.identifier = identifier
-
-    def __str__(self) -> str:
-        return self.file.path
-
-
-
-@pytest.fixture(params=files)
+@pytest.fixture(params=lsp_testing_input.files)
 def opened_file(client: pytest_lsp.LanguageClient, request):
     file: FileToTest = request.param
-    fullpath         = base_directory / file.path
+    fullpath         = lsp_testing_input.base_directory / file.path
 
     with open(fullpath, "r") as file_handle:
         source = file_handle.read()
@@ -168,11 +71,33 @@ def opened_file(client: pytest_lsp.LanguageClient, request):
 def to_zero_based_position(line: int, column: int) -> lspt.Position:
     return lspt.Position(line - 1, column -1)
 
-def strip_md(mdtext: lspt.MarkupContent) -> str:
-    text = mdtext.value
-    text = re.sub("```glsl\n", "", text)
-    text = re.sub("\n```",     "", text)
-    return text
+
+def none_guard(
+    expected: typing.Any|None, result: typing.Any|None,
+    expect_fail: bool, expect_fail_reason: str, context: str
+) -> bool:
+    """Check if either `expected` or `result` is `None`.
+    If so, validate expectations.
+
+    If this returns `True`, both `expected` and `result` are `None` and
+    no further assertions should be made.
+
+    If this returns `False`, both `expected` and `result` have values
+    that should be validated further.
+
+    Otherwise, the function will exit through `assert` or `xfail`.
+    """
+
+    if expected is None or result is None:
+        if not expect_fail:
+            assert result == expected
+            return True
+        else:
+            assert result != expected, \
+                f"Expected to fail because: {expect_fail_reason}. Passed instead."
+            pytest.xfail(context) # raises exception
+    return False
+
 
 
 
@@ -183,9 +108,70 @@ async def test_hover(
     subtests: pytest_subtests.SubTests
 ):
 
-    for hover_args in opened_file.file.hover_test_args:
-        line, column, expected, expect_success = unwrap_args(hover_args)
+    for args in opened_file.file.hover_test_args:
+        line, column, expected, token_kind, \
+            expect_fail, expect_fail_reason = args
+
         file_location = f"{opened_file}:{line}:{column}"
+
+
+        def expect_generic(expected: str, result: lspt.Hover):
+            def strip_md(mdtext: lspt.MarkupContent) -> str:
+                text = mdtext.value
+                text = re.sub("```glsl\n", "", text)
+                text = re.sub("\n```",     "", text)
+                return text
+
+            result = strip_md(result.contents)
+
+            if not expect_fail:
+                assert result == expected
+            else: # expect fail
+                assert result != expected, \
+                    f"Expected to fail because: {expect_fail_reason}. Passed instead."
+                pytest.xfail(file_location)
+
+
+        def expect_function(expected: str|set[str], result: lspt.Hover):
+            def strip_md(mdtext: lspt.MarkupContent) -> list[str]:
+                strippables = ("```glsl", "```", "\n", " ")
+
+                text = mdtext.value
+                entries = text.split(sep="---")
+
+                for i, entry in enumerate(entries):
+                    post_strip = entry
+                    while True:
+                        pre_strip = post_strip
+                        # There's probably a pattern there, but I don't care.
+                        # Keep strippin'.
+                        for markdown_garbage in strippables:
+                            post_strip = post_strip.strip(markdown_garbage)
+
+                        if pre_strip == post_strip:
+                            break
+
+                    entries[i] = post_strip
+
+                return entries
+
+
+            result = strip_md(result.contents)
+
+            expected_set = {expected} if isinstance(expected, str) else expected
+            result_set   = set(result)
+
+            has_no_duplicates        = len(result_set) == len(result)
+            is_expected_overload_set = expected_set == result_set
+
+            if not expect_fail:
+                assert has_no_duplicates and is_expected_overload_set
+            else:
+                assert not (has_no_duplicates and is_expected_overload_set), \
+                    f"Expected to fail because: {expect_fail_reason}. Passed instead."
+
+
+
 
         with subtests.test(msg=file_location):
 
@@ -196,15 +182,72 @@ async def test_hover(
                 )
             )
 
-            if result is not None:
-                result = strip_md(result.contents)
+            if none_guard(expected, result, expect_fail, expect_fail_reason, file_location):
+                continue
 
-            if expect_success:
-                assert result == expected
+            match (token_kind):
+                case TokenKind.Function:
+                    expect_function(expected, result)
+                case TokenKind.Other | _:
+                    expect_generic(expected, result)
+
+
+
+
+
+@pytest.mark.asyncio
+async def test_completion(
+    client: pytest_lsp.LanguageClient,
+    opened_file: OpenedFile,
+    subtests: pytest_subtests.SubTests
+):
+
+    for args in opened_file.file.completion_test_args:
+        line, column, expected, token_kind, \
+            expect_fail, expect_fail_reason = args
+
+        file_location = f"{opened_file}:{line}:{column}"
+
+
+        def expect_generic(expected: tuple[str], result: list[lspt.CompletionItem]):
+            labels = tuple(item.label for item in result)
+
+            expected_set = set(expected)
+            labels_set   = set(labels)
+
+            def unique_if_present_in(label: str, collection):
+                return sum(label == item for item in collection) <= 1
+
+            all_expected_are_present = expected_set.issubset(labels_set)
+            all_expected_are_unique  = all(unique_if_present_in(expected_label, labels) for expected_label in expected)
+
+            if not expect_fail:
+                # Check for uniqueness separately from presence,
+                # so that assert fails would point to the right reason.
+                assert all_expected_are_unique and all_expected_are_present
             else: # expect fail
-                # Ohh, how much do I not like this...
-                assert result != expected, "Expected to fail, passed instead"
+                assert not (all_expected_are_unique and all_expected_are_present), \
+                    f"Expected to fail because: {expect_fail_reason}. Passed instead."
                 pytest.xfail(file_location)
 
 
 
+
+        with subtests.test(msg=file_location):
+
+            result = await client.text_document_completion_async(
+                lspt.CompletionParams(
+                    text_document=opened_file.identifier,
+                    position=to_zero_based_position(line, column),
+                    context=lspt.CompletionContext(
+                        lspt.CompletionTriggerKind.Invoked
+                    )
+                )
+            )
+
+            if none_guard(expected, result, expect_fail, expect_fail_reason, file_location):
+                continue
+
+            match (token_kind):
+                case _:
+                    expect_generic(expected, result)
