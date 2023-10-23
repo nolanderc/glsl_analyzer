@@ -3,14 +3,13 @@ import pathlib
 from testing_utils import (
     ExpectFail,
     FileToTest,
-    TokenKind
 )
 
-
+import expected_hover
+import expected_completion
 
 
 base_directory = pathlib.Path(__file__).parent.resolve()
-
 
 
 files = [
@@ -131,31 +130,31 @@ files = [
         path="hover-and-completion/functions.frag",
         hover_test_args=(
             # Basic function declaration with qualified argument types.
-            (30,  5, "int (inout int, out vec4, in float, const float)", TokenKind.Function),
+            (30,  5, expected_hover.FunctionIdent("int (inout int, out vec4, in float, const float)")),
             # Redeclaration of the same signature should not produce duplicate info.
-            (33,  5, "int (int)", TokenKind.Function),
+            (33,  5, expected_hover.FunctionIdent("int (int)")),
             # Redeclaration with implicit `in` or `const` qualifier should not produce extra overloads.
-  ExpectFail(36,  5, "int (int)", TokenKind.Function, \
+  ExpectFail(36,  5, expected_hover.FunctionIdent("int (int)"), \
                 reason="Current version uses simple string comparison for removing overloads"),
             # Functions from visible overload set are present.
-            (39,  5, {"int (int)", "uint (uint)"}, TokenKind.Function),
+            (39,  5, expected_hover.FunctionIdent({"int (int)", "uint (uint)"})),
             # Overloads inaccessble in the current context should not be visible.
-  ExpectFail(42,  5, "int (int)", TokenKind.Function, \
+  ExpectFail(42,  5, expected_hover.FunctionIdent("int (int)"), \
                 reason="Bug. Should only show overloads declared previously"),
         ),
         completion_test_args=(
             # Basic function identifier presence.
-            (30,  8, ("fun",), TokenKind.Function),
+            (30,  8, ("fun",)),
             # No duplicate completion entries on redeclaration.
-            (33,  8, ("fun_redeclared",), TokenKind.Function),
+            (33,  8, ("fun_redeclared",)),
             # Redeclaration with implicit `in` or `const` qualifier should not produce extra overloads.
-  ExpectFail(36,  8, ("fun_redeclared_but_with_implicit_in",), TokenKind.Function, \
+  ExpectFail(36,  8, ("fun_redeclared_but_with_implicit_in",), \
                 reason="Current version does not remove duplicate overloads from the completion list"),
             # Overloads do not generate duplicate entries in the completion list.
-  ExpectFail(39,  8, ("fun_overloaded",), TokenKind.Function, \
+  ExpectFail(39,  8, ("fun_overloaded",), \
                 reason="Current version does not remove duplicate overloads from the completion list"),
             # Inaccessible overload should not be visible.
-  ExpectFail(42,  8, ("fun_overloaded_but_later",), TokenKind.Function, \
+  ExpectFail(42,  8, ("fun_overloaded_but_later",), \
                 reason="Bug. Inaccessible overloads are visible in completion")
         ),
     ),

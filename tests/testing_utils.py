@@ -2,6 +2,9 @@ import typing
 from enum import Enum
 
 import lsprotocol.types as lspt
+import expected_hover
+import expected_completion
+import typeguard
 
 
 class ExpectFail:
@@ -12,53 +15,17 @@ class ExpectFail:
         self.reason = reason
 
 
-class TokenKind(Enum):
-    """Enum used for differentiating between formats
-    of hover info, completion results, etc.
-
-    The interpretation of the `expected` parameter changes
-    based on the supplied `TokenKind`.
-
-    Most of the time the default `Other` kind is enough,
-    but some kinds like `Function` require special handling
-    because of overloads, for example."""
-
-    Other = 0
-    """Default token kind with no special testing semantics.
-
-    For hover:
-        `expected` is `str|None`.
-        Compares stripped version of result with `expected`.
-
-    For completion:
-        `expected` is `tuple[str]|None`.
-        Checks if all the elements of `expected` are uniquely present in
-        the completion list."""
-
-    Function = 1
-    """Special token kind capable of handling the function overloads.
-
-    For hover:
-        `expected` is `str|set[str]|None`.
-        Checks that each overload of the `expected` set is present
-        in the stripped result.
-
-    For completion:
-        Same as `Other`."""
-
-
 class HoverTestArgs:
     def __init__(
         self,
         line: int, column: int,
-        expected,
-        token_kind: TokenKind = TokenKind.Other,
+        expected: expected_hover.AnyExpected|None,
         *,
         _expect_fail: bool = False,
         _expect_fail_reason: str = ""
     ):
         self.args = (
-            line, column, expected, token_kind,
+            line, column, expected,
             _expect_fail, _expect_fail_reason
         )
 
@@ -70,14 +37,13 @@ class CompletionTestArgs:
     def __init__(
         self,
         line: int, column: int,
-        expected,
-        token_kind: TokenKind = TokenKind.Other,
+        expected: expected_completion.AnyExpected|None,
         *,
         _expect_fail: bool = False,
         _expect_fail_reason: str = ""
     ):
         self.args = (
-            line, column, expected, token_kind,
+            line, column, expected,
             _expect_fail, _expect_fail_reason
         )
 
@@ -85,25 +51,67 @@ class CompletionTestArgs:
         return self.args.__iter__()
 
 
-def _unwrap_args(
-    args_type: type[HoverTestArgs|CompletionTestArgs],
-    args: tuple|ExpectFail
+@typeguard.typechecked
+def _wrap_expected_hover(
+    expected: str|expected_hover.AnyExpected|None
 ):
-    """Removes top-level `ExpectFail` if present
+    """Wraps the `expected` tuple argument into `Generic`
+    if it's not any of the `AnyExpected` types or `None`.
+
+    Leaves the `expected` untouched otherwise."""
+    if expected_hover.is_any_expected(expected):
+        return expected
+    elif expected is None:
+        return expected
+    else:
+        return expected_hover.Generic(expected)
+
+
+
+@typeguard.typechecked
+def _wrap_expected_completion(
+    expected: typing.Tuple[str, ...]|expected_completion.AnyExpected|None
+):
+    """Wraps the `expected` tuple argument into `Generic`
+    if it's not any of the `AnyExpected` types or `None`.
+
+    Leaves the `expected` untouched otherwise."""
+    if expected_completion.is_any_expected(expected):
+        return expected
+    elif expected is None:
+        return expected
+    else:
+        return expected_completion.Generic(expected)
+
+
+ArgsTuple = typing.Tuple[int, int, typing.Any|None]
+
+
+@typeguard.typechecked
+def _prepare_args(
+    args_type: type[HoverTestArgs|CompletionTestArgs],
+    args: ArgsTuple|ExpectFail
+):
+    """Removes top-level `ExpectFail` if present,
+    wraps the `expected` parameter into `Generic` if necessary,
     and packs the args tuple into the specified `args_type`
     along with the `expect_fail` info."""
+
+    def wrap(args: ArgsTuple):
+        line, column, expected = args
+        if args_type is HoverTestArgs:
+            return (line, column, _wrap_expected_hover(expected))
+        elif args_type is CompletionTestArgs:
+            return (line, column, _wrap_expected_completion(expected))
+
     if isinstance(args, ExpectFail):
         return args_type(
-            *args.args,
+            *wrap(args.args),
             _expect_fail=True,
             _expect_fail_reason=args.reason
         )
-    elif isinstance(args, tuple):
-        return args_type(*args)
     else:
-        raise TypeError(
-            "Expected tuple or an instance of ExpectArgs."
-        )
+        return args_type(*wrap(args))
 
 
 class FileToTest:
@@ -115,9 +123,9 @@ class FileToTest:
     ):
         self.path                 = path
         self.hover_test_args      = \
-            tuple(_unwrap_args(HoverTestArgs, args) for args in hover_test_args)
+            tuple(_prepare_args(HoverTestArgs, args) for args in hover_test_args)
         self.completion_test_args = \
-            tuple(_unwrap_args(CompletionTestArgs, args) for args in completion_test_args)
+            tuple(_prepare_args(CompletionTestArgs, args) for args in completion_test_args)
 
 
 class OpenedFile:

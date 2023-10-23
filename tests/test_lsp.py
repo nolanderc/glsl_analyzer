@@ -13,11 +13,11 @@ import pytest_lsp
 from testing_utils import (
     FileToTest,
     OpenedFile,
-    TokenKind
 )
 
 import lsp_testing_input
-
+import expected_hover
+import expected_completion
 
 
 
@@ -99,6 +99,25 @@ def none_guard(
     return False
 
 
+def strip_until_naked(formatted_text: str) -> str:
+    strippables = ("```glsl", "```", "\n", " ")
+
+    post_strip = formatted_text
+    while True:
+        pre_strip = post_strip
+        # This is probably inefficient, but I don't care.
+        # Keep strippin'.
+        for markdown_garbage in strippables:
+            post_strip = post_strip \
+                .removeprefix(markdown_garbage) \
+                .removesuffix(markdown_garbage)
+
+        if pre_strip == post_strip:
+            break
+
+    return post_strip
+
+
 
 
 @pytest.mark.asyncio
@@ -109,20 +128,15 @@ async def test_hover(
 ):
 
     for args in opened_file.file.hover_test_args:
-        line, column, expected, token_kind, \
+        line, column, expected, \
             expect_fail, expect_fail_reason = args
 
         file_location = f"{opened_file}:{line}:{column}"
 
 
         def expect_generic(expected: str, result: lspt.Hover):
-            def strip_md(mdtext: lspt.MarkupContent) -> str:
-                text = mdtext.value
-                text = re.sub("```glsl\n", "", text)
-                text = re.sub("\n```",     "", text)
-                return text
 
-            result = strip_md(result.contents)
+            result: str = strip_until_naked(result.contents.value)
 
             if not expect_fail:
                 assert result == expected
@@ -134,29 +148,17 @@ async def test_hover(
 
         def expect_function(expected: str|set[str], result: lspt.Hover):
             def strip_md(mdtext: lspt.MarkupContent) -> list[str]:
-                strippables = ("```glsl", "```", "\n", " ")
 
                 text = mdtext.value
                 entries = text.split(sep="---")
 
                 for i, entry in enumerate(entries):
-                    post_strip = entry
-                    while True:
-                        pre_strip = post_strip
-                        # There's probably a pattern there, but I don't care.
-                        # Keep strippin'.
-                        for markdown_garbage in strippables:
-                            post_strip = post_strip.strip(markdown_garbage)
-
-                        if pre_strip == post_strip:
-                            break
-
-                    entries[i] = post_strip
+                    entries[i] = strip_until_naked(entry)
 
                 return entries
 
 
-            result = strip_md(result.contents)
+            result: list[str] = strip_md(result.contents)
 
             expected_set = {expected} if isinstance(expected, str) else expected
             result_set   = set(result)
@@ -169,6 +171,7 @@ async def test_hover(
             else:
                 assert not (has_no_duplicates and is_expected_overload_set), \
                     f"Expected to fail because: {expect_fail_reason}. Passed instead."
+                pytest.xfail(file_location)
 
 
 
@@ -185,11 +188,15 @@ async def test_hover(
             if none_guard(expected, result, expect_fail, expect_fail_reason, file_location):
                 continue
 
-            match (token_kind):
-                case TokenKind.Function:
-                    expect_function(expected, result)
-                case TokenKind.Other | _:
-                    expect_generic(expected, result)
+            match (expected):
+                case expected_hover.Generic():
+                    expect_generic(expected.expected, result)
+                case expected_hover.FunctionIdent():
+                    expect_function(expected.expected, result)
+                case _:
+                    assert False, \
+                        "Unknown hover target type. Forgot to add a handler here?"
+
 
 
 
@@ -203,7 +210,7 @@ async def test_completion(
 ):
 
     for args in opened_file.file.completion_test_args:
-        line, column, expected, token_kind, \
+        line, column, expected, \
             expect_fail, expect_fail_reason = args
 
         file_location = f"{opened_file}:{line}:{column}"
@@ -248,6 +255,9 @@ async def test_completion(
             if none_guard(expected, result, expect_fail, expect_fail_reason, file_location):
                 continue
 
-            match (token_kind):
+            match (expected):
+                case expected_completion.Generic():
+                    expect_generic(expected.expected, result)
                 case _:
-                    expect_generic(expected, result)
+                    assert False, \
+                        "Unknown completion target type. Forgot to add a handler here?"
