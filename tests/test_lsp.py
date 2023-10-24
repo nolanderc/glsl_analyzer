@@ -35,7 +35,7 @@ async def client(lsp_client: pytest_lsp.LanguageClient):
     await lsp_client.shutdown_session()
 
 
-@pytest.fixture(params=lsp_testing_input.files)
+@pytest.fixture(params=lsp_testing_input.files_to_test)
 def opened_file(client: pytest_lsp.LanguageClient, request):
     file: FileToTest = request.param
     fullpath         = lsp_testing_input.base_directory / file.path

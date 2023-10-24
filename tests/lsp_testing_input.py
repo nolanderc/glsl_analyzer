@@ -12,7 +12,7 @@ import expected_completion
 base_directory = pathlib.Path(__file__).parent.resolve()
 
 
-files = [
+files_to_test = [
     # TODO: Arrays, UBOs and SSBOs, images/samplers.
     FileToTest(
         path="glsl-samples/well-formed/basic.vert",
