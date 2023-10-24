@@ -1,5 +1,4 @@
 import typing
-from enum import Enum
 
 import lsprotocol.types as lspt
 import expected_hover
