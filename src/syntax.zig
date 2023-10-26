@@ -175,7 +175,10 @@ pub const Block = ListExtractor(.block, Token(.@"{"), Statement, Token(.@"}"));
 
 pub const Statement = union(enum) {
     pub usingnamespace UnionExtractorMixin(@This());
+    declaration: Declaration,
 };
+
+pub const ConditionList = ListExtractor(.condition_list, Token(.@"("), Statement, Token(.@")"));
 
 pub const Expression = Lazy("ExpressionUnion");
 
@@ -185,7 +188,14 @@ pub const ExpressionUnion = union(enum) {
     identifier: Token(.identifier),
     number: Token(.number),
     array: ArraySpecifier(Expression),
+    selection: Selection,
 };
+
+pub const Selection = Extractor(.selection, struct {
+    target: Expression,
+    @".": Token(.@"."),
+    field: Token(.identifier),
+});
 
 pub fn Token(comptime tag: Tag) type {
     comptime std.debug.assert(tag.isToken());
@@ -200,6 +210,11 @@ pub fn Token(comptime tag: Tag) type {
 
         pub fn extract(_: Tree, node: u32, _: void) @This() {
             return .{ .node = node };
+        }
+
+        pub fn text(self: @This(), source: []const u8, tree: Tree) []const u8 {
+            const span = tree.token(self.node);
+            return source[span.start..span.end];
         }
     };
 }
@@ -266,6 +281,12 @@ pub fn Extractor(comptime expected_tag: Tag, comptime T: type) type {
             }
 
             return .{ .node = node, .matches = matches };
+        }
+
+        pub fn nodeOf(self: @This(), comptime field: FieldEnum, tree: Tree) ?u32 {
+            const field_match = @field(self.matches, @tagName(field));
+            const node_offset = field_match.node_offset orelse return null;
+            return tree.children(self.node).start + node_offset;
         }
 
         pub fn get(self: @This(), comptime field: FieldEnum, tree: Tree) ?std.meta.FieldType(T, field) {

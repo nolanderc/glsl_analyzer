@@ -18,6 +18,8 @@ watch *ARGS:
 
 test:
     zig build test --summary failures {{flags}}
+    just install
+    tests/run-all-tests.sh
 
 test-file *ARGS:
     zig test {{flags}} "$@"
@@ -39,4 +41,4 @@ generate-spec:
     cd spec && just
 
 release:
-    ./release.sh
+    zig build release {{flags}}

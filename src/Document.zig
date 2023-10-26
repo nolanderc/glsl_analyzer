@@ -83,27 +83,14 @@ pub fn nodeRange(self: *@This(), node: u32) !lsp.Range {
     };
 }
 
-pub fn wordUnderCursor(self: *@This(), cursor: lsp.Position) []const u8 {
-    const offset = self.utf8FromPosition(cursor);
-
-    var start = offset;
-    var end = offset;
-
-    const bytes = self.contents.items;
-    while (start > 0 and isIdentifierChar(bytes[start - 1])) start -= 1;
-    while (end < bytes.len and isIdentifierChar(bytes[end])) end += 1;
-
-    return bytes[start..end];
-}
-
 /// Return the node right under the cursor.
-pub fn nodeUnderCursor(self: *@This(), cursor: lsp.Position) !?u32 {
+pub fn identifierUnderCursor(self: *@This(), cursor: lsp.Position) !?u32 {
     const offset = self.utf8FromPosition(cursor);
     const parsed = try self.parseTree();
     const tree = parsed.tree;
 
     for (0.., tree.nodes.items(.tag), tree.nodes.items(.span)) |index, tag, span| {
-        if (tag.isToken() and span.start <= offset and offset < span.end) {
+        if (tag == .identifier and span.start <= offset and offset <= span.end) {
             return @intCast(index);
         }
     }
@@ -112,7 +99,7 @@ pub fn nodeUnderCursor(self: *@This(), cursor: lsp.Position) !?u32 {
 }
 
 /// Return the node closest to left of the cursor.
-pub fn nodeBeforeCursor(self: *@This(), cursor: lsp.Position) !?u32 {
+pub fn tokenBeforeCursor(self: *@This(), cursor: lsp.Position) !?u32 {
     const offset = self.utf8FromPosition(cursor);
     const parsed = try self.parseTree();
     const tree = parsed.tree;
@@ -126,7 +113,7 @@ pub fn nodeBeforeCursor(self: *@This(), cursor: lsp.Position) !?u32 {
             if (span.start == span.end) continue;
 
             // ignore tokens after the cursor
-            if (offset < span.start) continue;
+            if (offset <= span.start) continue;
 
             if (span.end > best_end) {
                 // found a token further to the right
@@ -137,10 +124,6 @@ pub fn nodeBeforeCursor(self: *@This(), cursor: lsp.Position) !?u32 {
     }
 
     return best;
-}
-
-fn isIdentifierChar(c: u8) bool {
-    return std.ascii.isAlphanumeric(c) or c == '_';
 }
 
 pub fn parseTree(self: *@This()) !*const CompleteParseTree {
@@ -155,8 +138,11 @@ pub fn parseTree(self: *@This()) !*const CompleteParseTree {
 pub const CompleteParseTree = struct {
     arena_state: std.heap.ArenaAllocator.State,
     tree: parse.Tree,
-    ignored: []parse.Token,
-    diagnostics: std.ArrayListUnmanaged(parse.Diagnostic),
+    ignored: []const parse.Token,
+    diagnostics: []const parse.Diagnostic,
+
+    // List of enabled extensions
+    extensions: []const []const u8,
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         self.arena_state.promote(allocator).deinit();
@@ -166,22 +152,36 @@ pub const CompleteParseTree = struct {
         var arena = std.heap.ArenaAllocator.init(parent_allocator);
         errdefer arena.deinit();
 
-        const allocator = arena.allocator();
+        var diagnostics = std.ArrayList(parse.Diagnostic).init(arena.allocator());
 
-        var diagnostics = std.ArrayList(parse.Diagnostic).init(allocator);
         var ignored = std.ArrayList(parse.Token).init(parent_allocator);
         defer ignored.deinit();
 
-        const tree = try parse.parse(allocator, text, .{
+        const tree = try parse.parse(arena.allocator(), text, .{
             .ignored = &ignored,
             .diagnostics = &diagnostics,
         });
+
+        var extensions = std.ArrayList([]const u8).init(arena.allocator());
+        errdefer extensions.deinit();
+
+        for (ignored.items) |token| {
+            const line = text[token.start..token.end];
+            switch (parse.parsePreprocessorDirective(line) orelse continue) {
+                .extension => |extension| {
+                    const name = extension.name;
+                    try extensions.append(line[name.start..name.end]);
+                },
+                else => continue,
+            }
+        }
 
         return .{
             .arena_state = arena.state,
             .tree = tree,
             .ignored = tree.ignored(),
-            .diagnostics = diagnostics.moveToUnmanaged(),
+            .diagnostics = diagnostics.items,
+            .extensions = extensions.items,
         };
     }
 };

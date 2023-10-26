@@ -269,6 +269,7 @@ pub const Channel = union(enum) {
 
 const State = struct {
     allocator: std.mem.Allocator,
+
     channel: *std.io.BufferedWriter(4096, Channel.Writer),
     running: bool = true,
     initialized: bool = false,
@@ -544,10 +545,18 @@ pub const Dispatch = struct {
         var symbol_arena = std.heap.ArenaAllocator.init(state.allocator);
         defer symbol_arena.deinit();
 
-        try completionsAtPosition(
+        const token = try document.tokenBeforeCursor(params.value.position);
+
+        const parsed = try document.parseTree();
+        if (token != null and parsed.tree.tag(token.?) == .comment) {
+            // don't give completions in comments
+            return state.success(request.id, null);
+        }
+
+        try completionsAtToken(
             state,
             document,
-            params.value.position,
+            token,
             &completions,
             symbol_arena.allocator(),
             .{ .ignore_current = true },
@@ -556,29 +565,28 @@ pub const Dispatch = struct {
         try state.success(request.id, completions.items);
     }
 
-    fn completionsAtPosition(
+    fn completionsAtToken(
         state: *State,
         document: *Workspace.Document,
-        position: lsp.Position,
+        start_token: ?u32,
         completions: *std.ArrayList(lsp.CompletionItem),
         arena: std.mem.Allocator,
         options: struct { ignore_current: bool },
     ) !void {
         var has_fields = false;
 
-        if (try document.nodeBeforeCursor(position)) |node| {
-            var symbols = std.ArrayList(analysis.Reference).init(state.allocator);
-            defer symbols.deinit();
+        var symbols = std.ArrayList(analysis.Reference).init(arena);
 
-            try analysis.visibleFields(document, node, &symbols);
+        if (start_token) |token| {
+            try analysis.visibleFields(arena, document, token, &symbols);
             has_fields = symbols.items.len != 0;
 
-            if (!has_fields) try analysis.visibleSymbols(document, node, &symbols);
+            if (!has_fields) try analysis.visibleSymbols(arena, document, token, &symbols);
 
             try completions.ensureUnusedCapacity(symbols.items.len);
 
             for (symbols.items) |symbol| {
-                if (options.ignore_current and symbol.document == document and symbol.node == node) {
+                if (options.ignore_current and symbol.document == document and symbol.node == token) {
                     continue;
                 }
 
@@ -635,9 +643,18 @@ pub const Dispatch = struct {
         std.log.debug("hover: {} {s}", .{ params.value.position, params.value.textDocument.uri });
 
         const document = try getDocumentOrFail(state, request, params.value.textDocument);
+        const parsed = try document.parseTree();
 
-        const word = document.wordUnderCursor(params.value.position);
-        std.log.debug("hover word: '{'}'", .{std.zig.fmtEscapes(word)});
+        const token = try document.identifierUnderCursor(params.value.position) orelse {
+            return state.success(request.id, null);
+        };
+
+        if (parsed.tree.tag(token) != .identifier) {
+            return state.success(request.id, null);
+        }
+
+        const token_span = parsed.tree.token(token);
+        const token_text = document.source()[token_span.start..token_span.end];
 
         var completions = std.ArrayList(lsp.CompletionItem).init(state.allocator);
         defer completions.deinit();
@@ -645,10 +662,10 @@ pub const Dispatch = struct {
         var symbol_arena = std.heap.ArenaAllocator.init(state.allocator);
         defer symbol_arena.deinit();
 
-        try completionsAtPosition(
+        try completionsAtToken(
             state,
             document,
-            params.value.position,
+            token,
             &completions,
             symbol_arena.allocator(),
             .{ .ignore_current = false },
@@ -658,7 +675,7 @@ pub const Dispatch = struct {
         defer text.deinit();
 
         for (completions.items) |*completion| {
-            if (std.mem.eql(u8, completion.label, word)) {
+            if (std.mem.eql(u8, completion.label, token_text)) {
                 if (text.items.len != 0) {
                     try text.appendSlice("\n\n---\n\n");
                 }
@@ -732,7 +749,7 @@ pub const Dispatch = struct {
         });
 
         const document = try state.workspace.getOrLoadDocument(params.value.textDocument);
-        const source_node = try document.nodeUnderCursor(params.value.position) orelse {
+        const source_node = try document.identifierUnderCursor(params.value.position) orelse {
             std.log.debug("no node under cursor", .{});
             return state.success(request.id, null);
         };
@@ -740,7 +757,9 @@ pub const Dispatch = struct {
         var references = std.ArrayList(analysis.Reference).init(state.allocator);
         defer references.deinit();
 
-        try analysis.findDefinition(document, source_node, &references);
+        var arena = std.heap.ArenaAllocator.init(state.allocator);
+        defer arena.deinit();
+        try analysis.findDefinition(arena.allocator(), document, source_node, &references);
 
         if (references.items.len == 0) {
             std.log.debug("could not find definition", .{});

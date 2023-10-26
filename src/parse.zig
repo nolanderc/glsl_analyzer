@@ -359,7 +359,7 @@ pub const Tree = struct {
         };
 
         var f = Formatter{ .tree = data.tree, .source = data.source, .writer = writer };
-        try f.writeNode(data.tree.nodes.len - 1);
+        try f.writeNode(data.tree.root);
     }
 };
 
@@ -385,6 +385,7 @@ pub const Parser = struct {
     allocator: std.mem.Allocator,
     tokenizer: Tokenizer,
     next: Node,
+    last_end: u32 = 0,
     fuel: u32 = max_fuel,
 
     deferred_error: ?Error = null,
@@ -423,6 +424,9 @@ pub const Parser = struct {
 
         tree.root = @intCast(tree.nodes.len - 1);
 
+        // Append any ignored tokens to the end of the parse tree.
+        // This ensures that we can refer to ignored tokens with the same
+        // mechanisms as any other syntax node.
         if (self.options.ignored) |ignored| {
             const ignored_start = tree.nodes.len;
             try tree.nodes.resize(self.allocator, tree.nodes.len + ignored.items.len);
@@ -463,6 +467,7 @@ pub const Parser = struct {
                     }
                 },
                 else => {
+                    self.last_end = self.next.span.end;
                     self.next = token;
                     self.fuel = max_fuel;
                     return;
@@ -509,7 +514,10 @@ pub const Parser = struct {
 
     fn emitError(self: *@This(), message: []const u8) void {
         self.emitDiagnostic(.{
-            .span = self.next.getToken() orelse unreachable,
+            .span = .{
+                .start = self.last_end,
+                .end = self.last_end,
+            },
             .message = message,
         });
 
@@ -520,7 +528,7 @@ pub const Parser = struct {
     fn advanceWithError(self: *@This(), message: []const u8) void {
         const m = self.open();
         self.emitDiagnostic(.{
-            .span = self.next.getToken() orelse unreachable,
+            .span = self.next.span,
             .message = message,
         });
         self.advance();
@@ -582,6 +590,11 @@ pub const Parser = struct {
             .span = range,
         }));
     }
+
+    fn lastTag(self: *const @This()) Tag {
+        const tags = self.stack.items(.tag);
+        return tags[tags.len - 1];
+    }
 };
 
 pub fn parseFile(p: *Parser) void {
@@ -618,7 +631,28 @@ fn externalDeclaration(p: *Parser) void {
     }
 
     typeQualifier(p);
+
+    const identifier_specifier = p.at(.identifier);
     if (p.atAny(type_specifier_first)) typeSpecifier(p);
+
+    if (identifier_specifier and p.lastTag() == .identifier and p.at(.@"(")) {
+        // looks like macro expansion
+        var level: u32 = 0;
+        while (true) {
+            const tag = p.peek();
+            defer p.advance();
+            switch (tag) {
+                .@"(" => level += 1,
+                .@")" => {
+                    level -= 1;
+                    if (level == 0) break;
+                },
+                .eof => break,
+                else => {},
+            }
+        }
+        return p.close(m, .call);
+    }
 
     const m_field_list = p.open();
     if (p.eat(.@"{")) {
@@ -632,9 +666,7 @@ fn externalDeclaration(p: *Parser) void {
         return p.close(m, .block_declaration);
     }
 
-    if (p.eat(.@";")) return p.close(m, .qualifier_declaration);
-
-    if (p.at(.@",")) {
+    if (identifier_specifier and p.at(.@",")) {
         while (p.eat(.@",")) p.expect(.identifier);
         p.expect(.@";");
         return p.close(m, .qualifier_declaration);
@@ -748,6 +780,7 @@ fn statement(p: *Parser) void {
     const m = p.open();
 
     switch (p.peek()) {
+        .@";" => return p.advance(),
         .@"{" => return block(p),
         .keyword_do => {
             p.advance();
@@ -767,7 +800,7 @@ fn statement(p: *Parser) void {
             {
                 const m_cond = p.open();
                 p.expect(.@"(");
-                expression(p);
+                condition(p);
                 p.expect(.@")");
                 p.close(m_cond, .condition_list);
             }
@@ -778,8 +811,8 @@ fn statement(p: *Parser) void {
             {
                 const m_cond = p.open();
                 p.expect(.@"(");
-                if (!p.eat(.@";")) statement(p);
-                if (!p.eat(.@";")) statement(p);
+                if (!p.eat(.@";")) conditionStatement(p);
+                if (!p.eat(.@";")) conditionStatement(p);
                 _ = expressionOpt(p);
                 p.expect(.@")");
                 p.close(m_cond, .condition_list);
@@ -793,7 +826,7 @@ fn statement(p: *Parser) void {
                 {
                     const m_cond = p.open();
                     p.expect(.@"(");
-                    expression(p);
+                    condition(p);
                     p.expect(.@")");
                     p.close(m_cond, .condition_list);
                 }
@@ -816,7 +849,7 @@ fn statement(p: *Parser) void {
             {
                 const m_cond = p.open();
                 p.expect(.@"(");
-                expression(p);
+                condition(p);
                 p.expect(.@")");
                 p.close(m_cond, .condition_list);
             }
@@ -843,25 +876,50 @@ fn statement(p: *Parser) void {
             p.expect(.@";");
         },
         else => {
-            var is_decl = false;
-
-            if (p.atAny(type_qualifier_first)) {
-                typeQualifier(p);
-                typeSpecifier(p);
-                is_decl = true;
-            } else {
-                if (!expressionOpt(p)) p.emitError("expected a statement");
-            }
-
-            if (variableDeclarationList(p) > 0) is_decl = true;
-
+            const kind = simpleStatement(p);
             p.expect(.@";");
-
-            if (is_decl) return p.close(m, .declaration);
+            if (kind == .declaration) return p.close(m, .declaration);
         },
     }
 
     p.close(m, .statement);
+}
+
+fn conditionStatement(p: *Parser) void {
+    const m = p.open();
+    const kind = simpleStatement(p);
+    p.expect(.@";");
+    if (kind == .declaration) return p.close(m, .declaration);
+}
+
+fn condition(p: *Parser) void {
+    const m = p.open();
+    switch (simpleStatement(p)) {
+        .declaration => p.close(m, .declaration),
+        .expression => {},
+    }
+}
+
+fn simpleStatement(p: *Parser) enum { declaration, expression } {
+    var is_decl = false;
+    var has_specifier = false;
+
+    if (p.atAny(type_qualifier_first)) {
+        typeQualifier(p);
+        typeSpecifier(p);
+        is_decl = true;
+        has_specifier = true;
+    } else {
+        if (!expressionOpt(p)) p.emitError("expected a statement");
+        has_specifier = switch (p.lastTag()) {
+            .array_specifier, .struct_specifier, .identifier => true,
+            else => false,
+        };
+    }
+
+    if (has_specifier and variableDeclarationList(p) > 0) is_decl = true;
+
+    return if (is_decl) .declaration else .expression;
 }
 
 fn variableDeclarationList(p: *Parser) u32 {
@@ -883,7 +941,7 @@ fn variableDeclaration(p: *Parser) void {
 fn variableDeclarationSuffix(p: *Parser, m_var: Parser.Mark) void {
     if (p.at(.@"[")) arraySpecifier(p, m_var);
     if (p.eat(.@"=")) initializer(p);
-    if (!p.at(.@";")) p.expect(.@",");
+    if (!p.at(.@";") and !p.at(.@")")) p.expect(.@",");
     p.close(m_var, .variable_declaration);
 }
 
@@ -1320,12 +1378,6 @@ pub const Tokenizer = struct {
                 // decimal/octal
                 while (i < N and std.ascii.isDigit(text[i])) i += 1;
 
-                if (i < N and (text[i] == 'u' or text[i] == 'U')) {
-                    // unsigned (cannot be float)
-                    i += 1;
-                    return self.token(.number, i);
-                }
-
                 if (i < N and text[i] == '.') {
                     // fractional part
                     i += 1;
@@ -1344,13 +1396,8 @@ pub const Tokenizer = struct {
                     while (i < N and std.ascii.isDigit(text[i])) i += 1;
                 }
 
-                if (i < N and (text[i] == 'f' or text[i] == 'F')) {
-                    i += 1;
-                } else if (i + 1 < N and (std.mem.startsWith(u8, text[i..], "lf") or
-                    std.mem.startsWith(u8, text[i..], "LF")))
-                {
-                    i += 2;
-                }
+                // type suffix (we just accept anything here to be as permissive as possible)
+                while (i < N and isIdentifierChar(text[i])) i += 1;
 
                 return self.token(.number, i);
             },
@@ -1415,20 +1462,7 @@ pub const Tokenizer = struct {
                 else => return self.token(.@"*", i + 1),
             },
             '/' => switch (getOrZero(text, i + 1)) {
-                '/' => {
-                    while (i < text.len and text[i] != '\n') i += 1;
-                    return self.token(.comment, i);
-                },
-                '*' => {
-                    i += 2;
-                    while (i + 1 < text.len) : (i += 1) {
-                        if (std.mem.startsWith(u8, text[i..], "*/")) {
-                            i += 2;
-                            break;
-                        }
-                    }
-                    return self.token(.comment, i);
-                },
+                '/', '*' => return self.token(.comment, stripComment(text, i)),
                 '=' => return self.token(.@"/=", i + 2),
                 else => return self.token(.@"/", i + 1),
             },
@@ -1475,13 +1509,13 @@ pub const Tokenizer = struct {
             },
 
             '#' => {
-                while (i < N and text[i] != '\n') {
-                    if (text[i] == '\\') {
-                        i += 1;
-                        if (i < N) i += 1;
-                        continue;
+                while (i < N) {
+                    switch (text[i]) {
+                        '\n' => break,
+                        '\\' => i = @max(i + 1, stripLineEscape(text, i)),
+                        '/' => i = @max(i + 1, stripComment(text, i)),
+                        else => i += 1,
                     }
-                    i += 1;
                 }
 
                 return self.token(.preprocessor, i);
@@ -1561,6 +1595,37 @@ pub const Tokenizer = struct {
     }
 };
 
+fn stripLineEscape(text: []const u8, start: u32) u32 {
+    if (std.mem.startsWith(u8, text[start..], "\\\n")) return start + 2;
+    if (std.mem.startsWith(u8, text[start..], "\\\r\n")) return start + 3;
+    return start;
+}
+
+fn stripComment(text: []const u8, start: u32) u32 {
+    var i = start;
+
+    if (std.mem.startsWith(u8, text[i..], "//")) {
+        i += 2;
+        while (i < text.len) {
+            switch (text[i]) {
+                '\n' => break,
+                '\\' => i = @max(i + 1, stripLineEscape(text, i)),
+                else => i += 1,
+            }
+        }
+    } else if (std.mem.startsWith(u8, text[i..], "/*")) {
+        i += 2;
+        while (i < text.len) : (i += 1) {
+            if (std.mem.startsWith(u8, text[i..], "*/")) {
+                i += 2;
+                break;
+            }
+        }
+    }
+
+    return i;
+}
+
 fn stripPrefix(text: []const u8, prefix: []const u8) ?[]const u8 {
     return if (std.mem.startsWith(u8, text, prefix)) text[prefix.len..] else null;
 }
@@ -1568,6 +1633,8 @@ fn stripPrefix(text: []const u8, prefix: []const u8) ?[]const u8 {
 pub const Directive = union(enum) {
     define: struct { name: Span },
     include: struct { path: Span },
+    version: struct { number: Span },
+    extension: struct { name: Span },
 };
 
 pub fn parsePreprocessorDirective(line: []const u8) ?Directive {
@@ -1606,6 +1673,20 @@ pub fn parsePreprocessorDirective(line: []const u8) ?Directive {
         const path_end = i;
 
         return .{ .include = .{ .path = .{ .start = path_start, .end = path_end } } };
+    }
+
+    if (std.mem.eql(u8, kind, "extension")) {
+        const name_start = i;
+        const name_end = skipIdentifier(i, line);
+        if (name_start == name_end) return null;
+        return .{ .extension = .{ .name = .{ .start = name_start, .end = name_end } } };
+    }
+
+    if (std.mem.eql(u8, kind, "version")) {
+        const number_start = i;
+        const number_end = skipIdentifier(i, line);
+        if (number_start == number_end) return null;
+        return .{ .version = .{ .number = .{ .start = number_start, .end = number_end } } };
     }
 
     return null;
