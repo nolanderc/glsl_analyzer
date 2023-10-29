@@ -671,21 +671,42 @@ pub const Dispatch = struct {
             .{ .ignore_current = false },
         );
 
-        var text = std.ArrayList(u8).init(state.allocator);
-        defer text.deinit();
+        // group completions by their documentation.
+        var groups = std.StringArrayHashMap(std.ArrayListUnmanaged(*const lsp.CompletionItem))
+            .init(symbol_arena.allocator());
+        defer groups.deinit();
 
         for (completions.items) |*completion| {
-            if (std.mem.eql(u8, completion.label, token_text)) {
-                if (text.items.len != 0) {
-                    try text.appendSlice("\n\n---\n\n");
+            if (!std.mem.eql(u8, completion.label, token_text)) continue;
+
+            const documentation_string = if (completion.documentation) |markup| markup.value else "";
+
+            const result = try groups.getOrPut(documentation_string);
+            if (!result.found_existing) result.value_ptr.* = .{};
+            try result.value_ptr.append(symbol_arena.allocator(), completion);
+        }
+
+        var text = std.ArrayList(u8).init(symbol_arena.allocator());
+        defer text.deinit();
+
+        for (groups.keys(), groups.values()) |description, group| {
+            if (text.items.len != 0) {
+                try text.appendSlice("\n\n---\n\n");
+            }
+
+            if (group.items.len != 0) {
+                try text.appendSlice("```glsl\n");
+                for (group.items) |completion| {
+                    if (completion.detail) |detail| {
+                        try text.writer().print("{s}\n", .{detail});
+                    }
                 }
-                if (completion.detail) |detail| {
-                    try text.writer().print("```glsl\n{s}\n```", .{detail});
-                }
-                if (completion.documentation) |docs| {
-                    try text.appendSlice("\n\n");
-                    try text.appendSlice(docs.value);
-                }
+                try text.appendSlice("```\n");
+            }
+
+            if (description.len != 0) {
+                if (group.items.len != 0) try text.appendSlice("\n");
+                try text.appendSlice(description);
             }
         }
 
