@@ -97,7 +97,7 @@ fn attachModules(step: *std.Build.CompileStep) !void {
         &.{b.build_root.path orelse "."},
     );
     options.addOption([]const u8, "build_root", build_root_path);
-    options.addOption([]const u8, "version", b.exec(&.{ "git", "describe", "--tags", "--always" }));
+    options.addOption([]const u8, "version", b.run(&.{ "git", "describe", "--tags", "--always" }));
     step.addOptions("build_options", options);
 }
 
