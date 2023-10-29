@@ -13,7 +13,7 @@ jobs:
       - name: Setup Zig
         uses: goto-bus-stop/setup-zig@v2.1.1
         with:
-          version: ${{ ZIG_VERSION }}
+          version: ${{ vars.ZIG_VERSION }}
       - name: Build
         run: ./release.sh
       - name: Release
