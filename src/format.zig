@@ -308,7 +308,13 @@ fn formatNode(tree: parse.Tree, current: usize, writer: anytype) !void {
         },
 
         // emit without spaces between childern
-        .layout_qualifier, .prefix, .postfix, .array, .array_specifier => {
+        .layout_qualifier,
+        .prefix,
+        .postfix,
+        .array,
+        .array_specifier,
+        .selection,
+        => {
             const children = tree.children(current);
             for (children.start..children.end) |child| {
                 try formatNode(tree, child, writer);
@@ -554,6 +560,15 @@ test "format qualifiers" {
     try expectIsFormatted(
         \\attribute vec4 color;
         \\varying vec4 color;
+        \\
+    );
+}
+
+test "format field selection" {
+    try expectIsFormatted(
+        \\void main() {
+        \\    int gid = gl_GlobalInvocationId.x;
+        \\}
         \\
     );
 }
