@@ -321,6 +321,14 @@ fn formatNode(tree: parse.Tree, current: usize, writer: anytype) !void {
             }
         },
 
+        .conditional => {
+            const children = tree.children(current);
+            for (children.start..children.end) |child| {
+                if (child != children.start) writer.writeSpace();
+                try formatNode(tree, child, writer);
+            }
+        },
+
         // emit tokens separated by spaces
         inline else => |tag| {
             const operators = comptime parse.assignment_operators.unionWith(parse.infix_operators);
@@ -568,6 +576,15 @@ test "format field selection" {
     try expectIsFormatted(
         \\void main() {
         \\    int gid = gl_GlobalInvocationId.x;
+        \\}
+        \\
+    );
+}
+
+test "format ternary condition" {
+    try expectIsFormatted(
+        \\void main() {
+        \\    int foo = a ? b : c;
         \\}
         \\
     );
