@@ -314,6 +314,7 @@ fn formatNode(tree: parse.Tree, current: usize, writer: anytype) !void {
         .array,
         .array_specifier,
         .selection,
+        .parenthized,
         => {
             const children = tree.children(current);
             for (children.start..children.end) |child| {
@@ -370,7 +371,6 @@ fn needsLeadingSpace(tag: parse.Tag) bool {
         .@",",
         .parameter_list,
         .array,
-        .array_specifier,
         => false,
         else => true,
     };
@@ -585,6 +585,33 @@ test "format ternary condition" {
     try expectIsFormatted(
         \\void main() {
         \\    int foo = a ? b : c;
+        \\}
+        \\
+    );
+}
+
+test "format parenthized" {
+    try expectIsFormatted(
+        \\void main() {
+        \\    int foo = (1 + 1);
+        \\}
+        \\
+    );
+}
+
+test "format assign array" {
+    try expectIsFormatted(
+        \\void main() {
+        \\    int foo = bar[123];
+        \\}
+        \\
+    );
+}
+
+test "format array declaration" {
+    try expectIsFormatted(
+        \\void main() {
+        \\    int[2] foo[123];
         \\}
         \\
     );
