@@ -149,11 +149,8 @@ async def test_hover(
         def expect_function(expected: str|set[str], result: lspt.Hover):
             def strip_md(mdtext: lspt.MarkupContent) -> list[str]:
 
-                text = mdtext.value
-                entries = text.split(sep="---")
-
-                for i, entry in enumerate(entries):
-                    entries[i] = strip_until_naked(entry)
+                text = strip_until_naked(mdtext.value)
+                entries = text.split(sep="\n")
 
                 return entries
 
