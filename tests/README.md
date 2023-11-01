@@ -20,6 +20,8 @@
 
 **Requirements:** `python 3.10` and `requirements.txt`.
 
+*The `glsl_analyzer` version you want to test must be available in your PATH.*
+
 You can run the tests by directly invoking `pytest`:
 
 ```sh
@@ -258,6 +260,8 @@ We always expect failure in *strict mode*: if the test was expected to fail, but
 ## Parser tests
 
 Parser tests are simple bash scripts that run the parser with `glsl_analyzer --parse-file` on a set of files. Currently we only test successful parsing on well-formed code.
+
+*The `glsl_analyzer` version you want to test must be available in your PATH.*
 
 You can run the tests by executing
 

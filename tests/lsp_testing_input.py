@@ -13,7 +13,6 @@ base_directory = pathlib.Path(__file__).parent.resolve()
 
 
 files_to_test = [
-    # TODO: Arrays, UBOs and SSBOs, images/samplers.
     FileToTest(
         path="glsl-samples/well-formed/basic.vert",
         hover_test_args=(
@@ -187,6 +186,94 @@ files_to_test = [
             ( 8,  7, None),
             (29,  8, None),
         )
+    ),
+    FileToTest(
+        path="hover-and-completion/hover_positions.frag",
+        hover_test_args=(
+            # Past-the-end hover should only trigger when cursor is adjacent to the token.
+            ( 9, 10, "int"),
+            ( 9, 11, None),
+            # Past-the-end break by space and newline.
+            (11, 11, None),
+            (13,  1, None),
+            # Past-the-end break by comments.
+            (15, 17, None),
+            (17,  1, None),
+            # Nearby identifiers.
+            (19, 10, "int"),
+            (19, 11, "const int"),
+        )
+    ),
+    FileToTest(
+        path="hover-and-completion/static_arrays.frag",
+        hover_test_args=(
+            # Shadowing.
+            (18,  5, "const int[3]"),
+            (20,  5, "const int[]"),
+            # Implicit size.
+            (22,  5, "int[]"),
+            # Nested arrays.
+            (24,  5, "int[2][3]"),
+            # Nested with partially implicit size.
+            (26,  5, "const int[][3]"),
+            # Arrays of structs.
+            (32,  5, "const Elem[3]"),
+            (38,  5, "const Elem[3]"),
+            (38, 17, "int"),
+        ),
+        completion_test_args=(
+            # Arrays of structs.
+  ExpectFail(36, 14, None, \
+                reason="Bug. Arrays have no fields."),
+            (38, 17, ("field1",)),
+        ),
+    ),
+    FileToTest(
+        path="hover-and-completion/buffers.frag",
+        hover_test_args=(
+            # Global buffer fields.
+            (60,  5, "mat4"),
+            (61,  5, "mat3[]"),
+            # Scoped buffer fields.
+            (63,  5, "layout(std140, binding = 1) uniform UBuffer1 { vec4 field0; }"),
+            (63, 14, "vec4"),
+            (65,  5, "layout(std430, binding = 1) buffer SSBuffer1 { mat2 field1[]; }"),
+            (65, 15, "mat2[]"),
+            (67,  5, "layout(std430, binding = 2) buffer SSBuffer2 { vec3 field0[]; }"),
+            (67, 15, "vec3[]"),
+            # Nested fields.
+            (69,  5, "layout(std430, binding = 3) buffer SSBuffer3 { AAA aaa[][3]; }"),
+            (69, 15, "AAA[][3]"),
+            (69, 25, "int"),
+            # Nested structs with repeating names.
+            (71,  5, "layout(std430, binding = 4) buffer SSBuffer4 { CCC ssbuffer4; }"),
+            (71, 15, "CCC"),
+            (71, 25, "BBB"),
+            (71, 35, "uint"),
+            # Array of uniform buffers.
+            (73,  5, "layout(std140, binding = 2) uniform UBuffer2 { mat2 field0; }[3]"),
+            (73, 17, "mat2"),
+            # Qualifiers.
+            (75,  5, "layout(std430, binding = 5) restrict writeonly coherent buffer SSBuffer5 { bool field0; }"),
+            (75, 15, "bool"),
+        ),
+        completion_test_args=(
+            # Nested structs with repeating names.
+            (71, 15, ("ssbuffer4",)),
+            (71, 25, ("ssbuffer4",)),
+            (71, 35, ("ssbuffer4",)),
+        ),
+    ),
+    FileToTest(
+        path="hover-and-completion/images_and_samplers.frag",
+        hover_test_args=(
+            (15,  5, "uniform layout(rgba8, binding = 0) image2D"),
+            (17,  5, "uniform layout(rgba16i, binding = 1) iimageCubeArray"),
+            (19,  5, "uniform layout(rgba16_snorm, binding = 2) restrict writeonly coherent image2DMSArray"),
+            (22,  5, "uniform sampler2D"),
+            (24,  5, "uniform isamplerCubeArray"),
+            (26,  5, "uniform sampler2DMSArray"),
+        ),
     ),
 ]
 
