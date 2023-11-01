@@ -38,4 +38,5 @@ def test_parser_in_directory(
                 text=True
             )
 
-            assert len(output.stderr) == 0, output.stderr
+            assert output.returncode == 0 and len(output.stderr) == 0, \
+                output.stderr
