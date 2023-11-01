@@ -18,6 +18,8 @@
 
 **Requirements:** `python 3.10` and `requirements.txt`.
 
+*The `glsl_analyzer` version you want to test must be available in your PATH.*
+
 You can run the tests by directly invoking `pytest`:
 
 ```sh
