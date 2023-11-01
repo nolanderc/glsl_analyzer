@@ -156,14 +156,16 @@ fn builtinCompletions(arena: std.mem.Allocator, spec: *const Spec) ![]lsp.Comple
     }
 
     for (spec.variables) |variable| {
-        var signature = std.ArrayList(u8).init(arena);
-        try signature.writer().print("{}", .{variable.modifiers});
-        try signature.appendSlice(" ");
-        try signature.appendSlice(variable.type);
+        var anonymous_signature = std.ArrayList(u8).init(arena);
+        try writeVariableSignature(variable, anonymous_signature.writer(), .{ .names = false });
+
+        var named_signature = std.ArrayList(u8).init(arena);
+        try writeVariableSignature(variable, named_signature.writer(), .{ .names = true });
 
         try completions.append(.{
             .label = variable.name,
-            .labelDetails = .{ .detail = signature.items },
+            .labelDetails = .{ .detail = anonymous_signature.items },
+            .detail = named_signature.items,
             .kind = .variable,
             .documentation = try itemDocumentation(arena, variable),
         });
@@ -205,6 +207,31 @@ fn itemDocumentation(arena: std.mem.Allocator, item: anytype) !lsp.MarkupContent
     }
 
     return .{ .kind = .markdown, .value = try documentation.toOwnedSlice() };
+}
+
+fn writeVariableSignature(
+    variable: Spec.Variable,
+    writer: anytype,
+    options: struct { names: bool },
+) !void {
+    if (!std.meta.eql(variable.modifiers, .{ .in = true })) {
+        try writer.print("{}", .{variable.modifiers});
+        try writer.writeAll(" ");
+    }
+
+    try writer.writeAll(variable.type);
+
+    if (options.names) {
+        try writer.writeAll(" ");
+        try writer.writeAll(variable.name);
+
+        if (variable.default_value) |value| {
+            try writer.writeAll(" = ");
+            try writer.writeAll(value);
+        }
+
+        try writer.writeAll(";");
+    }
 }
 
 fn writeFunctionSignature(
