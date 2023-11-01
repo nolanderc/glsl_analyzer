@@ -19,7 +19,7 @@ watch *ARGS:
 test:
     zig build test --summary failures {{flags}}
     just install
-    tests/run-all-tests.sh
+    pytest tests/
 
 test-file *ARGS:
     zig test {{flags}} "$@"

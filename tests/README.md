@@ -1,7 +1,7 @@
 # `glsl_analyzer/tests`
 
+- [How do I run the tests?](#how-do-i-run-the-tests)
 - [LSP tests](#lsp-tests)
-    - [How do I run the tests?](#how-do-i-run-the-tests)
     - [How do I debug failing tests?](#how-do-i-debug-failing-tests)
     - [How do I add more files for testing / write new test cases?](#how-do-i-add-more-files-for-testing--write-new-test-cases)
         - [How tests and test input are structured](#how-tests-and-test-input-are-structured)
@@ -13,10 +13,8 @@
     - [Expecting failure](#expecting-failure)
 - [Parser tests](#parser-tests)
 
-## LSP tests
 
-
-### How do I run the tests?
+## How do I run the tests?
 
 **Requirements:** `python 3.10` and `requirements.txt`.
 
@@ -32,7 +30,16 @@ $ cd tests/ && pytest
 
 `pytest` will automatically pick up tests from modules that have names like `test_*.py` and contain functions `test_*` and classes `Test*`. More patterns are available, see the `pytest` docs.
 
+If you want to run individual test files, just specify them as arguments:
+
+```sh
+$ pytest tests/test_lsp.py
+```
+
 *Caution: do not run `pytest` with the `--runxfail` flag on these tests. We do not use `xfail` in its conventional form in our test suite; using this flag will make the tests fail in unpredictable ways.*
+
+
+## LSP tests
 
 
 ### How do I debug failing tests?
@@ -257,15 +264,13 @@ We always expect failure in *strict mode*: if the test was expected to fail, but
 
 ## Parser tests
 
-Parser tests are simple bash scripts that run the parser with `glsl_analyzer --parse-file` on a set of files. Currently we only test successful parsing on well-formed code.
+Parser tests are simple pytest scripts that run the parser with `glsl_analyzer --parse-file` on a set of files. Currently we only test successful parsing on well-formed code and check that the `glsl_analyzer` did not output anything into `stderr`.
 
-You can run the tests by executing
+Run only the parser tests by executing
 
 ```sh
-$ ./run-all-tests.sh
+$ pytest test_parser.py
 ```
 
-You can add more directories for testing by adding them to the `well_formed_dirs` in `run-parser-tests.sh`.
-
-*This setup will most likely be rewritten in the near future.*
+You can add more directories for testing by adding them to the  `dir_with_test_files` fixture `params` in `test_parser.py`.
 
