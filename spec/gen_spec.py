@@ -109,13 +109,17 @@ def process_docs_gl_file(path):
                 variable['description'] = description
                 variable['versions'] = version_support[0]
                 variables.append(variable)
+            if 'gl_Position' in path:
+                variable = { 'name': 'gl_Position', 'type': 'vec4' }
+                variable['description'] = description
+                variable['versions'] = version_support[0]
+                variables.append(variable)
         else:
             for i, node in enumerate(soup.find_all(attrs={'class':'funcprototype-table'})):
                 prototype = parse_prototype(node.getText())
                 prototype['description'] = description
                 prototype['versions'] = version_support[min(i, len(version_support) - 1)]
                 functions.append(prototype)
-
 
 def paragraph_to_markdown(paragraph):
     if paragraph.math is not None and paragraph.math.mtable is not None:

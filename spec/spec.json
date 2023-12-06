@@ -3427,6 +3427,30 @@
       ]
     },
     {
+      "name": "gl_Position",
+      "type": "vec4",
+      "description": [
+        "In the vertex, tessellation evaluation and geometry languages, a single global instance of the `gl_PerVertex` named block is available and its `gl_Position` member is an output that receives the homogeneous vertex position. It may be written at any time during shader execution. The value written to `gl_Position` will be used by primitive assembly, clipping, culling and other fixed functionality operations, if present, that operate on primitives after vertex processing has occurred.",
+        "In the tessellation control language, the `gl_PerVertex` named block is used to construct an array, `gl_out[]`, whose `gl_Position` members hold the homogeneous control point position, which become available as inputs to the subsequent tessellation evaluation shader.",
+        "The value of `gl_Position` (or the `gl_Position` member of the `gl_out[]` array, in the case of the tessellation control shader) is undefined after the vertex, tessellation control, and tessellation evaluation shading stages if the corresponding shader executable does not write to gl_Position. It is also undefined after the geometry processing stage if the geometry shader executable calls EmitVertex without having written `gl_Position` since the last call to EmitVertex (or hasn't written it at all).",
+        "In the tessellation control, tessellation evaluation and geometry languages, the `gl_PerVertex` named block is used to construct an array, `gl_in[]` of per-vertex or per-control point inputs whose content represents the corresponding outputs written by the previous stage."
+      ],
+      "versions": [
+        110,
+        120,
+        130,
+        140,
+        150,
+        330,
+        400,
+        410,
+        420,
+        430,
+        440,
+        450
+      ]
+    },
+    {
       "modifiers": "in",
       "type": "int",
       "name": "gl_PrimitiveID",
@@ -3532,7 +3556,7 @@
       "name": "gl_RayFlagsCullBackFacingTrianglesEXT",
       "default_value": "16U",
       "extensions": [
-        "GL_EXT_ray_query"
+        "GL_EXT_ray_tracing"
       ]
     },
     {
@@ -3541,7 +3565,7 @@
       "name": "gl_RayFlagsCullBackFacingTrianglesEXT",
       "default_value": "16U",
       "extensions": [
-        "GL_EXT_ray_tracing"
+        "GL_EXT_ray_query"
       ]
     },
     {
@@ -3559,7 +3583,7 @@
       "name": "gl_RayFlagsCullFrontFacingTrianglesEXT",
       "default_value": "32U",
       "extensions": [
-        "GL_EXT_ray_query"
+        "GL_EXT_ray_tracing"
       ]
     },
     {
@@ -3568,7 +3592,7 @@
       "name": "gl_RayFlagsCullFrontFacingTrianglesEXT",
       "default_value": "32U",
       "extensions": [
-        "GL_EXT_ray_tracing"
+        "GL_EXT_ray_query"
       ]
     },
     {
@@ -3586,7 +3610,7 @@
       "name": "gl_RayFlagsCullNoOpaqueEXT",
       "default_value": "128U",
       "extensions": [
-        "GL_EXT_ray_query"
+        "GL_EXT_ray_tracing"
       ]
     },
     {
@@ -3595,7 +3619,7 @@
       "name": "gl_RayFlagsCullNoOpaqueEXT",
       "default_value": "128U",
       "extensions": [
-        "GL_EXT_ray_tracing"
+        "GL_EXT_ray_query"
       ]
     },
     {
@@ -3613,7 +3637,7 @@
       "name": "gl_RayFlagsCullOpaqueEXT",
       "default_value": "64U",
       "extensions": [
-        "GL_EXT_ray_query"
+        "GL_EXT_ray_tracing"
       ]
     },
     {
@@ -3622,7 +3646,7 @@
       "name": "gl_RayFlagsCullOpaqueEXT",
       "default_value": "64U",
       "extensions": [
-        "GL_EXT_ray_tracing"
+        "GL_EXT_ray_query"
       ]
     },
     {
@@ -3649,7 +3673,7 @@
       "name": "gl_RayFlagsNoOpaqueEXT",
       "default_value": "2U",
       "extensions": [
-        "GL_EXT_ray_query"
+        "GL_EXT_ray_tracing"
       ]
     },
     {
@@ -3658,7 +3682,7 @@
       "name": "gl_RayFlagsNoOpaqueEXT",
       "default_value": "2U",
       "extensions": [
-        "GL_EXT_ray_tracing"
+        "GL_EXT_ray_query"
       ]
     },
     {
@@ -3675,8 +3699,11 @@
       "type": "uint",
       "name": "gl_RayFlagsNoneEXT",
       "default_value": "0U",
+      "description": [
+        "const uint `gl_RayFlagsNoneEXT` = 0U;\nconst uint `gl_RayFlagsOpaqueEXT` = 1U;\nconst uint `gl_RayFlagsNoOpaqueEXT` = 2U;\nconst uint `gl_RayFlagsTerminateOnFirstHitEXT` = 4U;\nconst uint `gl_RayFlagsSkipClosestHitShaderEXT` = 8U;\nconst uint `gl_RayFlagsCullBackFacingTrianglesEXT` = 16U;\nconst uint `gl_RayFlagsCullFrontFacingTrianglesEXT` = 32U;\nconst uint `gl_RayFlagsCullOpaqueEXT` = 64U;\nconst uint `gl_RayFlagsCullNoOpaqueEXT` = 128U;"
+      ],
       "extensions": [
-        "GL_EXT_ray_query"
+        "GL_EXT_ray_tracing"
       ]
     },
     {
@@ -3684,11 +3711,8 @@
       "type": "uint",
       "name": "gl_RayFlagsNoneEXT",
       "default_value": "0U",
-      "description": [
-        "const uint `gl_RayFlagsNoneEXT` = 0U;\nconst uint `gl_RayFlagsOpaqueEXT` = 1U;\nconst uint `gl_RayFlagsNoOpaqueEXT` = 2U;\nconst uint `gl_RayFlagsTerminateOnFirstHitEXT` = 4U;\nconst uint `gl_RayFlagsSkipClosestHitShaderEXT` = 8U;\nconst uint `gl_RayFlagsCullBackFacingTrianglesEXT` = 16U;\nconst uint `gl_RayFlagsCullFrontFacingTrianglesEXT` = 32U;\nconst uint `gl_RayFlagsCullOpaqueEXT` = 64U;\nconst uint `gl_RayFlagsCullNoOpaqueEXT` = 128U;"
-      ],
       "extensions": [
-        "GL_EXT_ray_tracing"
+        "GL_EXT_ray_query"
       ]
     },
     {
@@ -3708,8 +3732,11 @@
       "type": "uint",
       "name": "gl_RayFlagsOpaqueEXT",
       "default_value": "1U",
+      "description": [
+        "`gl_RayFlagsNoneEXT` -> NoneKHR ray flag\n`gl_RayFlagsOpaqueEXT` -> OpaqueKHR ray flag\n`gl_RayFlagsNoOpaqueEXT` -> NoOpaqueKHR ray flag\n`gl_RayFlagsTerminateOnFirstHitEXT` -> TerminateOnFirstHitKHR ray flag\n`gl_RayFlagsSkipClosestHitShaderEXT` -> SkipClosestHitShaderKHR ray flag\n`gl_RayFlagsCullBackFacingTrianglesEXT` -> CullBackFacingTrianglesKHR ray flag\n`gl_RayFlagsCullFrontFacingTrianglesEXT` -> CullFrontFacingTrianglesKHR ray flag\n`gl_RayFlagsCullOpaqueEXT` -> CullOpaqueKHR ray flag\n`gl_RayFlagsCullNoOpaqueEXT` -> CullNoOpaqueKHR ray flag"
+      ],
       "extensions": [
-        "GL_EXT_ray_query"
+        "GL_EXT_ray_tracing"
       ]
     },
     {
@@ -3717,11 +3744,8 @@
       "type": "uint",
       "name": "gl_RayFlagsOpaqueEXT",
       "default_value": "1U",
-      "description": [
-        "`gl_RayFlagsNoneEXT` -> NoneKHR ray flag\n`gl_RayFlagsOpaqueEXT` -> OpaqueKHR ray flag\n`gl_RayFlagsNoOpaqueEXT` -> NoOpaqueKHR ray flag\n`gl_RayFlagsTerminateOnFirstHitEXT` -> TerminateOnFirstHitKHR ray flag\n`gl_RayFlagsSkipClosestHitShaderEXT` -> SkipClosestHitShaderKHR ray flag\n`gl_RayFlagsCullBackFacingTrianglesEXT` -> CullBackFacingTrianglesKHR ray flag\n`gl_RayFlagsCullFrontFacingTrianglesEXT` -> CullFrontFacingTrianglesKHR ray flag\n`gl_RayFlagsCullOpaqueEXT` -> CullOpaqueKHR ray flag\n`gl_RayFlagsCullNoOpaqueEXT` -> CullNoOpaqueKHR ray flag"
-      ],
       "extensions": [
-        "GL_EXT_ray_tracing"
+        "GL_EXT_ray_query"
       ]
     },
     {
@@ -3751,7 +3775,7 @@
       "name": "gl_RayFlagsSkipClosestHitShaderEXT",
       "default_value": "8U",
       "extensions": [
-        "GL_EXT_ray_query"
+        "GL_EXT_ray_tracing"
       ]
     },
     {
@@ -3760,7 +3784,7 @@
       "name": "gl_RayFlagsSkipClosestHitShaderEXT",
       "default_value": "8U",
       "extensions": [
-        "GL_EXT_ray_tracing"
+        "GL_EXT_ray_query"
       ]
     },
     {
@@ -3787,7 +3811,7 @@
       "name": "gl_RayFlagsTerminateOnFirstHitEXT",
       "default_value": "4U",
       "extensions": [
-        "GL_EXT_ray_query"
+        "GL_EXT_ray_tracing"
       ]
     },
     {
@@ -3796,7 +3820,7 @@
       "name": "gl_RayFlagsTerminateOnFirstHitEXT",
       "default_value": "4U",
       "extensions": [
-        "GL_EXT_ray_tracing"
+        "GL_EXT_ray_query"
       ]
     },
     {
@@ -5201,6 +5225,24 @@
       ]
     },
     {
+      "return_type": "uint64_t",
+      "name": "atomicAdd",
+      "parameters": [
+        {
+          "modifiers": "inout",
+          "type": "uint64_t",
+          "name": "mem"
+        },
+        {
+          "type": "uint64_t",
+          "name": "data"
+        }
+      ],
+      "extensions": [
+        "GL_EXT_shader_atomic_int64"
+      ]
+    },
+    {
       "return_type": "float",
       "name": "atomicAdd",
       "parameters": [
@@ -5234,24 +5276,6 @@
       ],
       "extensions": [
         "GL_EXT_shader_atomic_float2"
-      ]
-    },
-    {
-      "return_type": "uint64_t",
-      "name": "atomicAdd",
-      "parameters": [
-        {
-          "modifiers": "inout",
-          "type": "uint64_t",
-          "name": "mem"
-        },
-        {
-          "type": "uint64_t",
-          "name": "data"
-        }
-      ],
-      "extensions": [
-        "GL_EXT_shader_atomic_int64"
       ]
     },
     {
@@ -5504,6 +5528,24 @@
       ]
     },
     {
+      "return_type": "uint64_t",
+      "name": "atomicExchange",
+      "parameters": [
+        {
+          "modifiers": "inout",
+          "type": "uint64_t",
+          "name": "mem"
+        },
+        {
+          "type": "uint64_t",
+          "name": "data"
+        }
+      ],
+      "extensions": [
+        "GL_EXT_shader_atomic_int64"
+      ]
+    },
+    {
       "return_type": "float",
       "name": "atomicExchange",
       "parameters": [
@@ -5537,24 +5579,6 @@
       ],
       "extensions": [
         "GL_EXT_shader_atomic_float2"
-      ]
-    },
-    {
-      "return_type": "uint64_t",
-      "name": "atomicExchange",
-      "parameters": [
-        {
-          "modifiers": "inout",
-          "type": "uint64_t",
-          "name": "mem"
-        },
-        {
-          "type": "uint64_t",
-          "name": "data"
-        }
-      ],
-      "extensions": [
-        "GL_EXT_shader_atomic_int64"
       ]
     },
     {
@@ -5658,24 +5682,6 @@
       ]
     },
     {
-      "return_type": "float",
-      "name": "atomicMax",
-      "parameters": [
-        {
-          "modifiers": "inout",
-          "type": "float",
-          "name": "mem"
-        },
-        {
-          "type": "float",
-          "name": "data"
-        }
-      ],
-      "extensions": [
-        "GL_EXT_shader_atomic_float2"
-      ]
-    },
-    {
       "return_type": "uint64_t",
       "name": "atomicMax",
       "parameters": [
@@ -5691,6 +5697,24 @@
       ],
       "extensions": [
         "GL_EXT_shader_atomic_int64"
+      ]
+    },
+    {
+      "return_type": "float",
+      "name": "atomicMax",
+      "parameters": [
+        {
+          "modifiers": "inout",
+          "type": "float",
+          "name": "mem"
+        },
+        {
+          "type": "float",
+          "name": "data"
+        }
+      ],
+      "extensions": [
+        "GL_EXT_shader_atomic_float2"
       ]
     },
     {
@@ -5742,24 +5766,6 @@
       ]
     },
     {
-      "return_type": "float",
-      "name": "atomicMin",
-      "parameters": [
-        {
-          "modifiers": "inout",
-          "type": "float",
-          "name": "mem"
-        },
-        {
-          "type": "float",
-          "name": "data"
-        }
-      ],
-      "extensions": [
-        "GL_EXT_shader_atomic_float2"
-      ]
-    },
-    {
       "return_type": "uint64_t",
       "name": "atomicMin",
       "parameters": [
@@ -5775,6 +5781,24 @@
       ],
       "extensions": [
         "GL_EXT_shader_atomic_int64"
+      ]
+    },
+    {
+      "return_type": "float",
+      "name": "atomicMin",
+      "parameters": [
+        {
+          "modifiers": "inout",
+          "type": "float",
+          "name": "mem"
+        },
+        {
+          "type": "float",
+          "name": "data"
+        }
+      ],
+      "extensions": [
+        "GL_EXT_shader_atomic_float2"
       ]
     },
     {
@@ -8147,6 +8171,14 @@
       "return_type": "void",
       "name": "groupMemoryBarrier",
       "parameters": [],
+      "extensions": [
+        "GL_KHR_memory_scope_semantics"
+      ]
+    },
+    {
+      "return_type": "void",
+      "name": "groupMemoryBarrier",
+      "parameters": [],
       "description": [
         "(modify last paragraph, p. 187)",
         "... all of the above variable types. The functions `memoryBarrierShared()`\nand `groupMemoryBarrier()` are available only in compute, task, and mesh\nshaders; the other functions are available in all shader types.",
@@ -8155,14 +8187,6 @@
       ],
       "extensions": [
         "GL_EXT_mesh_shader"
-      ]
-    },
-    {
-      "return_type": "void",
-      "name": "groupMemoryBarrier",
-      "parameters": [],
-      "extensions": [
-        "GL_KHR_memory_scope_semantics"
       ]
     },
     {
@@ -16337,7 +16361,7 @@
       "name": "memoryBarrierShared",
       "parameters": [],
       "extensions": [
-        "GL_EXT_mesh_shader"
+        "GL_KHR_memory_scope_semantics"
       ]
     },
     {
@@ -16345,7 +16369,7 @@
       "name": "memoryBarrierShared",
       "parameters": [],
       "extensions": [
-        "GL_KHR_memory_scope_semantics"
+        "GL_EXT_mesh_shader"
       ]
     },
     {
