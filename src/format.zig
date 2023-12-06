@@ -100,7 +100,7 @@ fn Writer(comptime ChildWriter: type) type {
             self.preceded_by_space = last == ' ' or last == '\n';
         }
 
-        fn emitLeadingTokens(self: *Self, until: u32) !void {
+        fn emitLeadingTokens(self: *Self, until: usize) !void {
             while (self.last_emit < until) {
                 if (self.last_ignored >= self.ignored_tokens.len) break;
 
@@ -180,6 +180,7 @@ fn formatNode(tree: parse.Tree, current: usize, writer: anytype) !void {
             for (children.start..children.end) |child| {
                 try formatNode(tree, child, writer);
             }
+            try writer.emitLeadingTokens(writer.source.len);
             try writer.emitLeadingWhitespace(writer.source.len, .{ .min = 1, .max = 1 });
         },
 
@@ -613,6 +614,26 @@ test "format array declaration" {
         \\void main() {
         \\    int[2] foo[123];
         \\}
+        \\
+    );
+}
+
+test "format only preprocessor" {
+    try expectIsFormatted(
+        \\#version 330
+        \\
+    );
+    try expectIsFormatted(
+        \\#version 330
+        \\#define FOO
+        \\#define BAR
+        \\
+    );
+}
+
+test "format only comments" {
+    try expectIsFormatted(
+        \\// hello world
         \\
     );
 }

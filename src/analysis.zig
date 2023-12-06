@@ -690,7 +690,7 @@ fn findIncludedDocuments(
         const directive = parse.parsePreprocessorDirective(line) orelse continue;
         switch (directive) {
             .include => |include| {
-                var include_path = line[include.path.start..include.path.end];
+                const include_path = line[include.path.start..include.path.end];
 
                 const is_relative = !std.fs.path.isAbsolute(include_path);
 

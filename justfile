@@ -14,6 +14,7 @@ run *ARGS:
     zig build run --summary none {{flags}} -- {{ARGS}}
 
 watch *ARGS:
+    #!/usr/bin/bash
     watchexec -e zig,py,vert,frag,comp -c -- "just ${*@Q} && echo ok"
 
 test:

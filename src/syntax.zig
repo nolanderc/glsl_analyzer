@@ -260,7 +260,7 @@ pub fn Extractor(comptime expected_tag: Tag, comptime T: type) type {
         pub fn extract(tree: Tree, node: u32, _: void) @This() {
             var matches = MatchFields{};
 
-            var children = tree.children(node);
+            const children = tree.children(node);
             var current = children.start;
 
             inline for (fields) |field| {

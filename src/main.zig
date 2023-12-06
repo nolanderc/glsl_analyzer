@@ -787,7 +787,7 @@ pub const Dispatch = struct {
             return state.success(request.id, null);
         }
 
-        var locations = try state.allocator.alloc(lsp.Location, references.items.len);
+        const locations = try state.allocator.alloc(lsp.Location, references.items.len);
         defer state.allocator.free(locations);
 
         for (references.items, locations) |reference, *location| {

@@ -2,3 +2,4 @@ zig-out
 zig-cache
 stderr.log
 __pycache__
+.venv
