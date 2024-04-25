@@ -235,7 +235,7 @@ pub fn Extractor(comptime expected_tag: Tag, comptime T: type) type {
 
         const MatchFields = @Type(.{
             .Struct = .{
-                .layout = .Auto,
+                .layout = .auto,
                 .fields = blk: {
                     var match_fields: [fields.len]std.builtin.Type.StructField = undefined;
                     for (&match_fields, fields) |*match_field, field| {
@@ -383,26 +383,31 @@ pub fn ListIterator(comptime Item: type) type {
 }
 
 pub fn UnionExtractorMixin(comptime Self: type) type {
+    const fields = std.meta.fields(Self);
+
     return struct {
         pub usingnamespace ExtractorMixin(Self);
 
-        const fields = std.meta.fields(Self);
+        const MatchUnion = @Type(.{
+            .Union = .{
+                .layout = .auto,
+                .fields = blk: {
+                    var match_fields: [fields.len]std.builtin.Type.UnionField = undefined;
 
-        const MatchUnion = @Type(.{ .Union = .{
-            .layout = .Extern,
-            .fields = blk: {
-                var match_fields: [fields.len]std.builtin.Type.UnionField = undefined;
+                    for (&match_fields, fields) |*match_field, field| {
+                        match_field.* = .{
+                            .name = field.name,
+                            .type = MatchResult(field.type),
+                            .alignment = 0,
+                        };
+                    }
 
-                for (&match_fields, fields) |*match_field, field| {
-                    match_field.* = field;
-                    match_field.type = MatchResult(field.type);
-                }
-
-                break :blk &match_fields;
+                    break :blk &match_fields;
+                },
+                .tag_type = std.meta.Tag(Self),
+                .decls = &.{},
             },
-            .tag_type = std.meta.Tag(Self),
-            .decls = &.{},
-        } });
+        });
 
         pub fn match(tree: Tree, node: u32) ?MatchUnion {
             inline for (fields) |field| {

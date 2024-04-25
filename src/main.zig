@@ -13,22 +13,20 @@ const cli = @import("cli.zig");
 const analysis = @import("analysis.zig");
 const parse = @import("parse.zig");
 
-pub const std_options = struct {
-    pub const log_level = .debug;
+pub const std_options: std.Options = .{
+    .log_level = .debug,
 };
 
 fn enableDevelopmentMode(stderr_target: []const u8) !void {
     if (builtin.os.tag == .linux) {
         // redirect stderr to the build root
-        const O = std.os.O;
-        const S = std.os.S;
-        const new_stderr = try std.os.open(
+        const new_stderr = try std.posix.open(
             stderr_target,
-            O.WRONLY | O.CREAT | O.TRUNC,
-            S.IRUSR | S.IWUSR | S.IRGRP | S.IROTH,
+            .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true },
+            0o644,
         );
-        try std.os.dup2(new_stderr, std.os.STDERR_FILENO);
-        std.os.close(new_stderr);
+        try std.posix.dup2(new_stderr, std.posix.STDERR_FILENO);
+        std.posix.close(new_stderr);
     } else {
         std.log.warn("development mode not available on {s}", .{@tagName(builtin.os.tag)});
         return error.UnsupportedPlatform;
@@ -96,10 +94,11 @@ pub fn main() !u8 {
                 return error.UnsupportedPlatform;
             }
 
-            var server = std.net.StreamServer.init(.{});
+            const address = try std.net.Address.parseIp("127.0.0.1", port);
+
+            var server = try address.listen(.{});
             defer server.deinit();
 
-            try server.listen(try std.net.Address.parseIp("127.0.0.1", port));
             const connection = try server.accept();
             std.log.info("incoming connection from {}", .{connection.address});
             break :blk .{ .socket = connection.stream };
