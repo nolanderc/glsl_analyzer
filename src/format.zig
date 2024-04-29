@@ -68,7 +68,7 @@ fn Writer(comptime ChildWriter: type) type {
                 self.preceded_by_space = true;
                 self.current_line += 1;
             }
-            if (start < bytes.len) try self.writeLine(bytes[0..]);
+            if (start < bytes.len) try self.writeLine(bytes[start..]);
         }
 
         fn writeLine(self: *Self, line: []const u8) !void {
@@ -634,6 +634,25 @@ test "format only preprocessor" {
 test "format only comments" {
     try expectIsFormatted(
         \\// hello world
+        \\
+    );
+}
+
+test "format multiline comment" {
+    try expectIsFormatted(
+        \\/*
+        \\ * hello world
+        \\ */
+        \\
+    );
+}
+
+test "format multiline define" {
+    try expectIsFormatted(
+        \\#define SNIPPET(x) \
+        \\    do {\
+        \\    x++;\
+        \\    } while (0)
         \\
     );
 }
