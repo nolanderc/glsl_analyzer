@@ -34,7 +34,7 @@ pub fn normalizePath(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
 
     if (components.root()) |root| {
         try buffer.appendSlice(root);
-        if (!lastIsSep(buffer.items)) try buffer.append(std.fs.path.sep);
+        if (!lastIsSep(buffer.items)) try buffer.append('/');
     }
 
     while (components.next()) |component| {
@@ -45,7 +45,7 @@ pub fn normalizePath(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
         } else if (std.mem.eql(u8, component.name, ".")) {
             continue;
         } else {
-            if (buffer.items.len != 0 and !lastIsSep(buffer.items)) try buffer.append(std.fs.path.sep);
+            if (buffer.items.len != 0 and !lastIsSep(buffer.items)) try buffer.append('/');
             try buffer.appendSlice(component.name);
         }
     }
@@ -57,9 +57,13 @@ fn lastIsSep(path: []const u8) bool {
     return std.fs.path.isSep(path[path.len - 1]);
 }
 
-test "normalizePath" {
+test normalizePath {
     try expectNormalizedPath("C:/bar", "C:/blah/../bar/.");
     try expectNormalizedPath("/bar", "/../bar/.");
+
+    if (@import("builtin").target.os.tag == .windows) {
+        try expectNormalizedPath("foo/bar/baz", "foo\\bar\\baz");
+    }
 }
 
 fn expectNormalizedPath(expected: []const u8, input: []const u8) !void {
