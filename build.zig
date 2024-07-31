@@ -24,7 +24,7 @@ pub fn build(b: *std.Build) !void {
     {
         const unit_tests = b.addTest(.{
             .name = "unit-tests",
-            .root_source_file = .{ .path = "src/main.zig" },
+            .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
         });
@@ -75,7 +75,7 @@ fn addExecutable(b: *std.Build, options: struct {
 }) !*std.Build.Step.Compile {
     const exe = b.addExecutable(.{
         .name = "glsl_analyzer",
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
         .target = options.target,
         .optimize = options.optimize,
     });
@@ -88,7 +88,7 @@ fn attachModules(step: *std.Build.Step.Compile) !void {
 
     step.linkLibC();
 
-    const compressed_spec = try CompressStep.create(b, "spec.json.zlib", .{ .path = b.pathFromRoot("spec/spec.json") });
+    const compressed_spec = try CompressStep.create(b, "spec.json.zlib", b.path("spec/spec.json"));
     step.root_module.addAnonymousImport("glsl_spec.json.zlib", .{ .root_source_file = compressed_spec.getOutput() });
 
     const options = b.addOptions();
@@ -123,10 +123,10 @@ const CompressStep = struct {
     }
 
     pub fn getOutput(self: *@This()) std.Build.LazyPath {
-        return .{ .generated = &self.generated_file };
+        return .{ .generated = .{ .file = &self.generated_file } };
     }
 
-    fn make(step: *std.Build.Step, _: *std.Progress.Node) anyerror!void {
+    fn make(step: *std.Build.Step, _: std.Progress.Node) anyerror!void {
         const b = step.owner;
         const self: *@This() = @fieldParentPtr("step", step);
         const input_path = self.input.getPath(b);

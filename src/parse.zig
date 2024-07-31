@@ -1588,7 +1588,7 @@ pub const Tokenizer = struct {
                 }
             }
 
-            break :blk std.ComptimeStringMap(Tag, table.slice());
+            break :blk std.StaticStringMap(Tag).initComptime(table.slice());
         };
 
         return map.get(identifier) orelse .identifier;

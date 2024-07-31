@@ -1,5 +1,5 @@
 zig-out
-zig-cache
+.zig-cache
 stderr.log
 __pycache__
 .venv
