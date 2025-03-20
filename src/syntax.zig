@@ -241,7 +241,7 @@ pub fn Extractor(comptime expected_tag: Tag, comptime T: type) type {
                     for (&match_fields, fields) |*match_field, field| {
                         match_field.* = field;
                         match_field.type = Match(field.type);
-                        match_field.default_value = &@as(match_field.type, .{});
+                        match_field.default_value_ptr = &@as(match_field.type, .{});
                     }
                     break :blk &match_fields;
                 },
