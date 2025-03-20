@@ -445,7 +445,7 @@ pub const Parser = struct {
         return tree;
     }
 
-    fn deferError(self: *@This(), value: anytype) @typeInfo(@TypeOf(value)).ErrorUnion.payload {
+    fn deferError(self: *@This(), value: anytype) @typeInfo(@TypeOf(value)).error_union.payload {
         if (value) |success| {
             return success;
         } else |err| {
