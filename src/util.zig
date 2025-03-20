@@ -40,7 +40,7 @@ pub fn normalizePath(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
     while (components.next()) |component| {
         if (std.mem.eql(u8, component.name, "..")) {
             while (buffer.items.len > components.root_end_index) {
-                if (std.fs.path.isSep(buffer.pop())) break;
+                if (std.fs.path.isSep(buffer.pop().?)) break;
             }
         } else if (std.mem.eql(u8, component.name, ".")) {
             continue;
