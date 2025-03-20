@@ -57,7 +57,7 @@ Make sure to copy it somewhere under your `PATH` environment variable (e.g.
 zig build install -Doptimize=ReleaseSafe --prefix ~/.local/
 ```
 
-Tested using `zig 0.13.0`.
+Tested using `zig 0.14.0`.
 
 
 ## Usage
