@@ -416,7 +416,7 @@ pub const Parser = struct {
     pub fn finish(self: *@This()) !Tree {
         if (self.deferred_error) |err| return err;
 
-        try self.tree.nodes.append(self.allocator, self.stack.pop());
+        try self.tree.nodes.append(self.allocator, self.stack.pop().?);
         self.tree.assignParents();
 
         var tree = self.tree;
@@ -445,7 +445,7 @@ pub const Parser = struct {
         return tree;
     }
 
-    fn deferError(self: *@This(), value: anytype) @typeInfo(@TypeOf(value)).ErrorUnion.payload {
+    fn deferError(self: *@This(), value: anytype) @typeInfo(@TypeOf(value)).error_union.payload {
         if (value) |success| {
             return success;
         } else |err| {

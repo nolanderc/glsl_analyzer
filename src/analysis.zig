@@ -265,7 +265,7 @@ pub fn visibleFields(
 
         var remaining_iterations: u32 = 16;
 
-        while (references.popOrNull()) |reference| {
+        while (references.pop()) |reference| {
             if (remaining_iterations == 0 or references.items.len >= 128) break;
             remaining_iterations -= 1;
 

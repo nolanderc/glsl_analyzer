@@ -126,7 +126,7 @@ const CompressStep = struct {
         return .{ .generated = .{ .file = &self.generated_file } };
     }
 
-    fn make(step: *std.Build.Step, _: std.Progress.Node) anyerror!void {
+    fn make(step: *std.Build.Step, _: std.Build.Step.MakeOptions) anyerror!void {
         const b = step.owner;
         const self: *@This() = @fieldParentPtr("step", step);
         const input_path = self.input.getPath(b);
