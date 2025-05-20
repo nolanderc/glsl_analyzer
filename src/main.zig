@@ -311,14 +311,20 @@ const State = struct {
         inline for (Dispatch.methods) |method| {
             if (std.mem.eql(u8, request.method, method)) {
                 try @field(Dispatch, method)(self, request);
-                break;
+                return;
             }
-        } else {
-            return self.fail(request.id, .{
-                .code = .method_not_found,
-                .message = request.method,
-            });
         }
+
+        // ignore unknown notifications
+        if (request.id == .null) {
+            std.log.debug("ignoring unknown '{'}' notification", .{std.zig.fmtEscapes(request.method)});
+            return;
+        }
+
+        return self.fail(request.id, .{
+            .code = .method_not_found,
+            .message = request.method,
+        });
     }
 
     const SendError = Channel.WriteError;
