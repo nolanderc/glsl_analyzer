@@ -50,20 +50,18 @@ pub const Arguments = struct {
     }
 
     const ValueParser = struct {
-        args: *std.process.ArgIterator,
+        args: *const *std.process.ArgIterator,
         option: []const u8,
         value: ?[]const u8,
 
         pub fn get(self: *@This(), name: []const u8) []const u8 {
             if (self.value) |value| return value;
-            if (self.args.next()) |value| return value;
+            if (self.args.*.next()) |value| return value;
             fail("'{s}' expects an argument '{s}'", .{ self.option, name });
         }
     };
 
-    pub fn parse(allocator: std.mem.Allocator) !Arguments {
-        var args = try std.process.argsWithAllocator(allocator);
-        defer args.deinit();
+    pub fn parse(args: *std.process.ArgIterator) !Arguments {
         _ = args.skip();
 
         var parsed = Arguments{};
