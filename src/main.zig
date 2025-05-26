@@ -40,7 +40,10 @@ pub fn main() !u8 {
     var static_arena = std.heap.ArenaAllocator.init(allocator);
     defer static_arena.deinit();
 
-    const args = try cli.Arguments.parse(allocator);
+    var alloc_args = try std.process.argsWithAllocator(allocator);
+    defer alloc_args.deinit();
+
+    const args = try cli.Arguments.parse(&alloc_args);
 
     if (args.dev_mode) |stderr_target| {
         if (enableDevelopmentMode(stderr_target)) {
