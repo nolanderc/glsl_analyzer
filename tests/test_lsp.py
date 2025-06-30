@@ -258,3 +258,80 @@ async def test_completion(
                 case _:
                     assert False, \
                         "Unknown completion target type. Forgot to add a handler here?"
+
+
+@pytest.mark.asyncio
+async def test_formatting_tab_size(client: pytest_lsp.LanguageClient):
+    """Test that formatting respects the tabSize option."""
+
+    # Create a simple GLSL document that needs formatting
+    source = "void main() { int x = 1; int y = 2; }"
+
+    doc = lspt.TextDocumentItem(
+        uri="file:///test.glsl", language_id="glsl", version=0, text=source
+    )
+
+    # Open the document
+    client.text_document_did_open(lspt.DidOpenTextDocumentParams(doc))
+
+    try:
+        # Test with default tab size (4 spaces)
+        result_4 = await client.text_document_formatting_async(
+            lspt.DocumentFormattingParams(
+                text_document=lspt.TextDocumentIdentifier(uri=doc.uri),
+                options=lspt.FormattingOptions(tab_size=4, insert_spaces=True),
+            )
+        )
+
+        # Test with 2 spaces
+        result_2 = await client.text_document_formatting_async(
+            lspt.DocumentFormattingParams(
+                text_document=lspt.TextDocumentIdentifier(uri=doc.uri),
+                options=lspt.FormattingOptions(tab_size=2, insert_spaces=True),
+            )
+        )
+
+        # Test with 8 spaces
+        result_8 = await client.text_document_formatting_async(
+            lspt.DocumentFormattingParams(
+                text_document=lspt.TextDocumentIdentifier(uri=doc.uri),
+                options=lspt.FormattingOptions(tab_size=8, insert_spaces=True),
+            )
+        )
+
+        # Verify results
+        assert result_4 is not None
+        assert result_2 is not None
+        assert result_8 is not None
+
+        # Check that the formatted text has different indentation
+        text_4 = result_4[0].new_text
+        text_2 = result_2[0].new_text
+        text_8 = result_8[0].new_text
+
+        # All should format the code properly but with different indentation
+        expected_4 = """void main() {
+    int x = 1;
+    int y = 2;
+}
+"""
+        expected_2 = """void main() {
+  int x = 1;
+  int y = 2;
+}
+"""
+        expected_8 = """void main() {
+        int x = 1;
+        int y = 2;
+}
+"""
+
+        assert text_4 == expected_4
+        assert text_2 == expected_2
+        assert text_8 == expected_8
+
+    finally:
+        # Close the document
+        client.text_document_did_close(
+            lspt.DidCloseTextDocumentParams(lspt.TextDocumentIdentifier(uri=doc.uri))
+        )
