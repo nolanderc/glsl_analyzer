@@ -54,6 +54,45 @@ pub fn main() !u8 {
         }
     }
 
+    if (args.format_file) |path| {
+        const source = std.fs.cwd().readFileAlloc(allocator, path, 1 << 30) catch |err| {
+            std.log.err("could not open '{s}': {s}", .{ path, @errorName(err) });
+            return err;
+        };
+        defer allocator.free(source);
+
+        var ignored = std.ArrayList(parse.Token).init(allocator);
+        defer ignored.deinit();
+
+        var diagnostics = std.ArrayList(parse.Diagnostic).init(allocator);
+        defer diagnostics.deinit();
+
+        var tree = try parse.parse(allocator, source, .{
+            .ignored = &ignored,
+            .diagnostics = &diagnostics,
+        });
+        defer tree.deinit(allocator);
+
+        if (diagnostics.items.len != 0) {
+            for (diagnostics.items) |diagnostic| {
+                const position = diagnostic.position(source);
+                try std.io.getStdErr().writer().print(
+                    "{s}:{}:{}: {s}\n",
+                    .{ path, position.line + 1, position.character + 1, diagnostic.message },
+                );
+            }
+            return 1;
+        }
+
+        var buffered_stdout = std.io.bufferedWriter(std.io.getStdOut().writer());
+        try @import("format.zig").format(tree, source, buffered_stdout.writer(), .{
+            .ignored = ignored.items,
+        });
+        try buffered_stdout.flush();
+
+        return 0;
+    }
+
     if (args.parse_file) |path| {
         const source = std.fs.cwd().readFileAlloc(allocator, path, 1 << 30) catch |err| {
             std.log.err("could not open '{s}': {s}", .{ path, @errorName(err) });

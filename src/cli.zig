@@ -9,6 +9,7 @@ pub const Arguments = struct {
     dev_mode: ?[]const u8 = null,
     parse_file: ?[]const u8 = null,
     print_ast: bool = false,
+    format_file: ?[]const u8 = null,
 
     pub const ChannelKind = union(enum) {
         stdio: void,
@@ -27,6 +28,7 @@ pub const Arguments = struct {
         \\     --stdio              Communicate over stdio. [default]
         \\ -p, --port <PORT>        Communicate over socket.
         \\     --dev-mode <PATH>    Enable development mode: redirects stderr to the given path.
+        \\     --format <PATH>      Print formatted file and exit.
         \\     --parse-file <PATH>  Parses the given file, prints diagnostics, then exits.
         \\     --print-ast          Prints the parse tree. Only valid with --parse-file.
         \\
@@ -117,6 +119,11 @@ pub const Arguments = struct {
 
             if (isAny(option, &.{"--print-ast"})) {
                 parsed.print_ast = true;
+                continue;
+            }
+
+            if (isAny(option, &.{"--format"})) {
+                parsed.format_file = value_parser.get("PATH");
                 continue;
             }
 
