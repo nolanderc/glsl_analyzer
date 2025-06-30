@@ -780,7 +780,7 @@ pub const Dispatch = struct {
     pub fn @"textDocument/formatting"(state: *State, request: *Request) !void {
         const params = try parseParams(FormattingParams, state, request);
         defer params.deinit();
-        std.log.debug("format: {s}", .{params.value.textDocument.uri});
+        std.log.debug("format: {s} tabSize: {}", .{params.value.textDocument.uri, params.value.options.tabSize});
 
         const document = try state.workspace.getOrLoadDocument(params.value.textDocument);
         const parsed = try document.parseTree();
@@ -792,7 +792,10 @@ pub const Dispatch = struct {
             parsed.tree,
             document.contents.items,
             buffer.writer(),
-            .{ .ignored = parsed.ignored },
+            .{ 
+                .ignored = parsed.ignored,
+                .tab_size = params.value.options.tabSize,
+            },
         );
 
         try state.success(request.id, .{

@@ -5,6 +5,7 @@ pub const FormatOptions = struct {
     ignored: []const parse.Token = &.{},
     root_node: ?u32 = null,
     single_line: bool = false,
+    tab_size: u32 = 4,
 };
 
 pub fn format(
@@ -18,6 +19,7 @@ pub fn format(
         .source = source,
         .ignored_tokens = options.ignored,
         .single_line = options.single_line,
+        .tab_size = options.tab_size,
     };
 
     const root = if (options.root_node) |root| blk: {
@@ -41,6 +43,7 @@ fn Writer(comptime ChildWriter: type) type {
 
         single_line: bool,
         line_breaks: LineBreaks = .{},
+        tab_size: u32,
 
         ignored_tokens: []const parse.Token,
         last_emit: u32 = 0,
@@ -154,7 +157,7 @@ fn Writer(comptime ChildWriter: type) type {
         }
 
         pub fn emitIndent(self: *Self) !void {
-            try self.child_writer.writeByteNTimes(' ', self.indentation * 4);
+            try self.child_writer.writeByteNTimes(' ', self.indentation * self.tab_size);
             if (self.indentation > 0) self.preceded_by_space = true;
         }
 
