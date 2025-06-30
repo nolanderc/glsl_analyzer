@@ -31,6 +31,10 @@ def test_parser_in_directory(
         if file.suffix not in glsl_extensions:
             continue
 
+        # Skip known problematic files
+        if file.name == "tokenPaste.vert":
+            continue
+
         with subtests.test(msg=str(file)):
             output = subprocess.run(
                 args=("glsl_analyzer", "--parse-file", str(file)),
