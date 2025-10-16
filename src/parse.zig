@@ -4,8 +4,8 @@ const util = @import("util.zig");
 
 pub const ParseOptions = struct {
     /// Append any ignored tokens (comments or preprocessor directives) to this list.
-    ignored: ?*std.ArrayList(Span) = null,
-    diagnostics: ?*std.ArrayList(Diagnostic) = null,
+    ignored: ?*std.array_list.Managed(Span) = null,
+    diagnostics: ?*std.array_list.Managed(Diagnostic) = null,
 };
 
 pub fn parse(
@@ -290,7 +290,7 @@ pub const Tree = struct {
         }
     }
 
-    pub fn format(tree: @This(), source: []const u8) std.fmt.Formatter(formatWithSource) {
+    pub fn format(tree: @This(), source: []const u8) std.fmt.Alt(WithSource, @This().formatWithSource) {
         return .{ .data = .{
             .tree = tree,
             .source = source,
@@ -304,17 +304,9 @@ pub const Tree = struct {
 
     fn formatWithSource(
         data: WithSource,
-        comptime fmt: []const u8,
-        _: anytype,
-        writer: anytype,
+        writer: *std.Io.Writer,
     ) !void {
-        comptime var with_spans = false;
-
-        if (comptime std.mem.eql(u8, fmt, "..")) {
-            with_spans = true;
-        } else if (fmt.len != 0) {
-            @compileError("expected `{}` or `{..}`");
-        }
+        const with_spans = false;
 
         const Formatter = struct {
             tree: Tree,
@@ -328,13 +320,13 @@ pub const Tree = struct {
                 const node = self.tree.nodes.get(index);
                 const name = @tagName(node.tag);
 
-                try self.writer.writeByteNTimes(' ', indent);
+                _ = try self.writer.splatByteAll(' ', indent);
 
                 if (node.getToken()) |tok| {
                     const text = self.source[tok.start..tok.end];
                     if (std.ascii.isAlphabetic(name[0])) {
                         try self.writer.writeAll(name);
-                        try self.writer.print(" '{'}'", .{std.zig.fmtEscapes(text)});
+                        try self.writer.print(" '{f}'", .{std.zig.fmtString(text)});
                     } else {
                         try self.writer.writeAll(name);
                     }
@@ -1580,7 +1572,10 @@ pub const Tokenizer = struct {
 
             const tags = std.meta.tags(Tag);
 
-            var table = std.BoundedArray(struct { []const u8, Tag }, tags.len){};
+            const TagMap = struct { []const u8, Tag };
+
+            var buffer: [tags.len]TagMap = undefined;
+            var table = std.ArrayListUnmanaged(TagMap).initBuffer(&buffer);
 
             for (tags) |tag| {
                 if (stripPrefix(@tagName(tag), "keyword_")) |name| {
@@ -1588,7 +1583,7 @@ pub const Tokenizer = struct {
                 }
             }
 
-            break :blk std.StaticStringMap(Tag).initComptime(table.slice());
+            break :blk std.StaticStringMap(Tag).initComptime(table.items);
         };
 
         return map.get(identifier) orelse .identifier;
@@ -1793,10 +1788,10 @@ test "parse and write" {
     var tree = try parse(std.testing.allocator, source, .{});
     defer tree.deinit(std.testing.allocator);
 
-    var buffer = std.ArrayList(u8).init(std.testing.allocator);
+    var buffer = std.array_list.Managed(u8).init(std.testing.allocator);
     defer buffer.deinit();
 
-    try buffer.writer().print("{}", .{tree.format(source)});
+    try buffer.writer().print("{f}", .{tree.format(source)});
 
     try std.testing.expectEqualStrings(
         \\file
@@ -1827,10 +1822,10 @@ test "parse infix op" {
     var tree = try parse(std.testing.allocator, source, .{});
     defer tree.deinit(std.testing.allocator);
 
-    var buffer = std.ArrayList(u8).init(std.testing.allocator);
+    var buffer = std.array_list.Managed(u8).init(std.testing.allocator);
     defer buffer.deinit();
 
-    try buffer.writer().print("{}", .{tree.format(source)});
+    try buffer.writer().print("{f}", .{tree.format(source)});
 
     try std.testing.expectEqualStrings(
         \\file
@@ -1856,10 +1851,10 @@ test "parse logical operator" {
     var tree = try parse(std.testing.allocator, source, .{});
     defer tree.deinit(std.testing.allocator);
 
-    var buffer = std.ArrayList(u8).init(std.testing.allocator);
+    var buffer = std.array_list.Managed(u8).init(std.testing.allocator);
     defer buffer.deinit();
 
-    try buffer.writer().print("{}", .{tree.format(source)});
+    try buffer.writer().print("{f}", .{tree.format(source)});
 
     try std.testing.expectEqualStrings(
         \\file
@@ -1917,14 +1912,14 @@ test "parse field selector" {
 }
 
 fn expectParsesOkay(source: []const u8) !void {
-    var diagnostics = std.ArrayList(Diagnostic).init(std.testing.allocator);
+    var diagnostics = std.array_list.Managed(Diagnostic).init(std.testing.allocator);
     defer diagnostics.deinit();
 
     var tree = try parse(std.testing.allocator, source, .{ .diagnostics = &diagnostics });
     defer tree.deinit(std.testing.allocator);
 
     errdefer std.debug.print("======== source ========\n{s}\n========================\n", .{source});
-    errdefer std.log.err("tree:\n{}", .{tree.format(source)});
+    errdefer std.log.err("tree:\n{f}", .{tree.format(source)});
 
     if (diagnostics.items.len != 0) {
         for (diagnostics.items) |diagnostic| {
