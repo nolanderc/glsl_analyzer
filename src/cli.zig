@@ -31,7 +31,7 @@ pub const Arguments = struct {
         \\     --print-ast          Prints the parse tree. Only valid with --parse-file.
         \\
         \\
-    ;
+        ;
 
     fn printHelp() noreturn {
         std.io.getStdOut().writer().writeAll(usage) catch {};
@@ -50,13 +50,13 @@ pub const Arguments = struct {
     }
 
     const ValueParser = struct {
-        args: *const *std.process.ArgIterator,
+        args: *std.process.ArgIterator,
         option: []const u8,
         value: ?[]const u8,
 
         pub fn get(self: *@This(), name: []const u8) []const u8 {
             if (self.value) |value| return value;
-            if (self.args.*.next()) |value| return value;
+            if (self.args.next()) |value| return value;
             fail("'{s}' expects an argument '{s}'", .{ self.option, name });
         }
     };
@@ -71,7 +71,7 @@ pub const Arguments = struct {
             const option = arg[0..option_end];
 
             var value_parser = ValueParser{
-                .args = &args,
+                .args = args,
                 .option = option,
                 .value = if (option_end == arg.len) null else arg[option_end + 1 ..],
             };
