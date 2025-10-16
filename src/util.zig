@@ -27,7 +27,7 @@ pub fn getJsonErrorContext(diagnostics: std.json.Diagnostics, bytes: []const u8)
 }
 
 pub fn normalizePath(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
-    var buffer = try std.ArrayList(u8).initCapacity(allocator, path.len);
+    var buffer = try std.array_list.Managed(u8).initCapacity(allocator, path.len);
     errdefer buffer.deinit();
 
     var components = try std.fs.path.componentIterator(path);

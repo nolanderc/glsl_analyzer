@@ -117,7 +117,7 @@ pub fn getOrLoadDocument(
 }
 
 fn builtinCompletions(arena: std.mem.Allocator, spec: *const Spec) ![]lsp.CompletionItem {
-    var completions = std.ArrayList(lsp.CompletionItem).init(arena);
+    var completions = std.array_list.Managed(lsp.CompletionItem).init(arena);
 
     try completions.ensureUnusedCapacity(
         spec.types.len + spec.variables.len + spec.functions.len,
@@ -156,10 +156,10 @@ fn builtinCompletions(arena: std.mem.Allocator, spec: *const Spec) ![]lsp.Comple
     }
 
     for (spec.variables) |variable| {
-        var anonymous_signature = std.ArrayList(u8).init(arena);
+        var anonymous_signature = std.array_list.Managed(u8).init(arena);
         try writeVariableSignature(variable, anonymous_signature.writer(), .{ .names = false });
 
-        var named_signature = std.ArrayList(u8).init(arena);
+        var named_signature = std.array_list.Managed(u8).init(arena);
         try writeVariableSignature(variable, named_signature.writer(), .{ .names = true });
 
         try completions.append(.{
@@ -172,10 +172,10 @@ fn builtinCompletions(arena: std.mem.Allocator, spec: *const Spec) ![]lsp.Comple
     }
 
     for (spec.functions) |function| {
-        var anonymous_signature = std.ArrayList(u8).init(arena);
+        var anonymous_signature = std.array_list.Managed(u8).init(arena);
         try writeFunctionSignature(function, anonymous_signature.writer(), .{ .names = false });
 
-        var named_signature = std.ArrayList(u8).init(arena);
+        var named_signature = std.array_list.Managed(u8).init(arena);
         try writeFunctionSignature(function, named_signature.writer(), .{ .names = true });
 
         try completions.append(.{
@@ -191,7 +191,7 @@ fn builtinCompletions(arena: std.mem.Allocator, spec: *const Spec) ![]lsp.Comple
 }
 
 fn itemDocumentation(arena: std.mem.Allocator, item: anytype) !lsp.MarkupContent {
-    var documentation = std.ArrayList(u8).init(arena);
+    var documentation = std.array_list.Managed(u8).init(arena);
 
     for (item.description orelse &.{}) |paragraph| {
         try documentation.appendSlice(paragraph);
@@ -215,7 +215,7 @@ fn writeVariableSignature(
     options: struct { names: bool },
 ) !void {
     if (!std.meta.eql(variable.modifiers, .{ .in = true })) {
-        try writer.print("{}", .{variable.modifiers});
+        try writer.print("{f}", .{variable.modifiers});
         try writer.writeAll(" ");
     }
 
@@ -247,7 +247,7 @@ fn writeFunctionSignature(
         if (i != 0) try writer.writeAll(", ");
         if (param.optional) try writer.writeAll("[");
         if (param.modifiers) |modifiers| {
-            try writer.print("{}", .{modifiers});
+            try writer.print("{f}", .{modifiers});
             try writer.writeAll(" ");
         }
         if (options.names) {

@@ -35,7 +35,9 @@ pub const Type = struct {
     arrays: ?syntax.ListIterator(syntax.Array) = null,
     parameters: ?syntax.ParameterList = null,
 
-    pub fn format(self: @This(), tree: Tree, source: []const u8) std.fmt.Formatter(formatType) {
+    const FormatContainer = struct { tree: Tree, source: []const u8, type: Type };
+
+    pub fn format(self: @This(), tree: Tree, source: []const u8) std.fmt.Alt(FormatContainer, @This().formatType) {
         return .{ .data = .{ .tree = tree, .source = source, .type = self } };
     }
 
@@ -44,10 +46,8 @@ pub const Type = struct {
     }
 
     fn formatType(
-        data: struct { tree: Tree, source: []const u8, type: Type },
-        _: anytype,
-        _: anytype,
-        writer: anytype,
+        data: FormatContainer,
+        writer: *std.Io.Writer,
     ) !void {
         const prettify = @import("format.zig").format;
 
@@ -80,7 +80,7 @@ pub const Type = struct {
             while (iterator.next(data.tree)) |parameter| : (i += 1) {
                 const parameter_type = parameterType(parameter, data.tree);
                 if (i != 0) try writer.writeAll(", ");
-                try writer.print("{}", .{parameter_type.format(data.tree, data.source)});
+                try @This().formatType(.{ .tree = data.tree, .source = data.source, .type = parameter_type }, writer);
             }
             try writer.writeAll(")");
         }
@@ -168,7 +168,7 @@ fn expectTypeFormat(source: []const u8, types: []const []const u8) !void {
     if (cursors.count() != types.len) return error.InvalidCursorCount;
 
     for (types, cursors.values()) |expected, cursor| {
-        var references = std.ArrayList(Reference).init(allocator);
+        var references = std.array_list.Managed(Reference).init(allocator);
         defer references.deinit();
 
         try findDefinition(allocator, document, cursor.node, &references);
@@ -177,7 +177,7 @@ fn expectTypeFormat(source: []const u8, types: []const []const u8) !void {
 
         const typ = try typeOf(ref) orelse return error.InvalidType;
 
-        const found = try std.fmt.allocPrint(allocator, "{}", .{typ.format(tree, document.source())});
+        const found = try std.fmt.allocPrint(allocator, "{f}", .{typ.format(tree, document.source())});
         defer allocator.free(found);
 
         try std.testing.expectEqualStrings(expected, found);
@@ -189,14 +189,14 @@ pub fn findDefinition(
     arena: std.mem.Allocator,
     document: *Document,
     node: u32,
-    references: *std.ArrayList(Reference),
+    references: *std.array_list.Managed(Reference),
 ) anyerror!void {
     const parse_tree = try document.parseTree();
     const tree = parse_tree.tree;
 
     const name = nodeName(tree, node, document.source()) orelse return;
 
-    var symbols = std.ArrayList(Reference).init(arena);
+    var symbols = std.array_list.Managed(Reference).init(arena);
     defer symbols.deinit();
 
     try visibleFields(arena, document, node, &symbols);
@@ -225,7 +225,7 @@ pub fn visibleFields(
     arena: std.mem.Allocator,
     document: *Document,
     start_node: u32,
-    symbols: *std.ArrayList(Reference),
+    symbols: *std.array_list.Managed(Reference),
 ) !void {
     const lhs = lhs: {
         const parsed = try document.parseTree();
@@ -253,10 +253,10 @@ pub fn visibleFields(
         return;
     }
 
-    var name_definitions = std.ArrayList(Reference).init(arena);
+    var name_definitions = std.array_list.Managed(Reference).init(arena);
     try findDefinition(arena, document, lhs, &name_definitions);
 
-    var references = std.ArrayList(Reference).init(document.workspace.allocator);
+    var references = std.array_list.Managed(Reference).init(document.workspace.allocator);
     defer references.deinit();
 
     for (name_definitions.items) |name_definition| {
@@ -369,7 +369,7 @@ pub const Scope = struct {
 
     pub fn getVisible(
         self: *const @This(),
-        symbols: *std.ArrayList(Reference),
+        symbols: *std.array_list.Managed(Reference),
         options: struct {
             /// An allocator used to detect duplicates.
             duplicate_allocator: std.mem.Allocator,
@@ -420,7 +420,7 @@ pub const Scope = struct {
         const func = syntax.ExtractorMixin(syntax.FunctionDeclaration).tryExtract(tree, decl_node) orelse return null;
         const parameters = func.get(.parameters, tree) orelse return null;
 
-        var signature = std.ArrayList(u8).init(allocator);
+        var signature = std.array_list.Managed(u8).init(allocator);
         errdefer signature.deinit();
 
         try signature.appendSlice("(");
@@ -430,7 +430,7 @@ pub const Scope = struct {
         while (iterator.next(tree)) |parameter| : (i += 1) {
             if (i != 0) try signature.appendSlice(", ");
             const typ = parameterType(parameter, tree);
-            try signature.writer().print("{}", .{typ.format(tree, document.source())});
+            try signature.writer().print("{f}", .{typ.format(tree, document.source())});
         }
 
         try signature.appendSlice(")");
@@ -444,7 +444,7 @@ pub fn visibleSymbols(
     arena: std.mem.Allocator,
     start_document: *Document,
     start_node: u32,
-    symbols: *std.ArrayList(Reference),
+    symbols: *std.array_list.Managed(Reference),
 ) !void {
     var scope = Scope{ .allocator = arena };
     try scope.begin();
@@ -452,7 +452,7 @@ pub fn visibleSymbols(
 
     // collect global symbols:
     {
-        var documents = try std.ArrayList(*Document).initCapacity(arena, 8);
+        var documents = try std.array_list.Managed(*Document).initCapacity(arena, 8);
         defer documents.deinit();
 
         try documents.append(start_document);
@@ -667,7 +667,7 @@ fn registerVariables(
 /// Appends the set of documents which are visible (recursively) from any of the documents in the list.
 fn findIncludedDocumentsRecursive(
     arena: std.mem.Allocator,
-    documents: *std.ArrayList(*Document),
+    documents: *std.array_list.Managed(*Document),
 ) !void {
     var i: usize = 0;
     while (i < documents.items.len) : (i += 1) {
@@ -679,7 +679,7 @@ fn findIncludedDocumentsRecursive(
 fn findIncludedDocuments(
     arena: std.mem.Allocator,
     start: *Document,
-    documents: *std.ArrayList(*Document),
+    documents: *std.array_list.Managed(*Document),
 ) !void {
     const parsed = try start.parseTree();
 
@@ -702,8 +702,8 @@ fn findIncludedDocuments(
                 defer arena.free(uri);
 
                 const included_document = start.workspace.getOrLoadDocument(.{ .uri = uri }) catch |err| {
-                    std.log.err("could not open '{'}': {s}", .{
-                        std.zig.fmtEscapes(uri),
+                    std.log.err("could not open '{f}': {s}", .{
+                        std.zig.fmtString(uri),
                         @errorName(err),
                     });
                     continue;
@@ -941,7 +941,7 @@ fn expectDefinition(
         const usage = cursors.get(case.source) orelse std.debug.panic("invalid cursor: {s}", .{case.source});
         const definition = cursors.get(case.target) orelse std.debug.panic("invalid cursor: {s}", .{case.source});
 
-        var references = std.ArrayList(Reference).init(workspace.allocator);
+        var references = std.array_list.Managed(Reference).init(workspace.allocator);
         defer references.deinit();
         try findDefinition(arena.allocator(), document, usage.node, &references);
 
@@ -991,8 +991,8 @@ fn findCursors(document: *Document) !std.StringArrayHashMap(Cursor) {
                 break;
             }
         } else {
-            std.debug.panic("cursor not found: \"{}\"", .{
-                std.zig.fmtEscapes(document.source()[cursor.start..cursor.end]),
+            std.debug.panic("cursor not found: \"{f}\"", .{
+                std.zig.fmtString(document.source()[cursor.start..cursor.end]),
             });
         }
     }

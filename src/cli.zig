@@ -2,6 +2,8 @@ const std = @import("std");
 
 pub const NAME = "glsl_analyzer";
 
+var stdout_buffer: [1024]u8 = undefined;
+
 pub const Arguments = struct {
     version: bool = false,
     channel: ChannelKind = .stdio,
@@ -36,17 +38,26 @@ pub const Arguments = struct {
         ;
 
     fn printHelp() noreturn {
-        std.io.getStdOut().writer().writeAll(usage) catch {};
+        var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+        const stdout = &stdout_writer.interface;
+        stdout.writeAll(usage) catch {};
+        stdout.flush() catch {};
         std.process.exit(1);
     }
 
     fn printVersion() noreturn {
-        std.io.getStdOut().writer().writeAll(@import("build_options").version) catch {};
+        var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+        const stdout = &stdout_writer.interface;
+        stdout.writeAll(@import("build_options").version) catch {};
+        stdout.flush() catch {};
         std.process.exit(0);
     }
 
     fn fail(comptime fmt: []const u8, args: anytype) noreturn {
-        std.io.getStdErr().writer().writeAll(usage) catch {};
+        var stderr_writer = std.fs.File.stderr().writer(&stdout_buffer);
+        const stderr = &stderr_writer.interface;
+        stderr.writeAll(usage) catch {};
+        stderr.flush() catch {};
         std.log.err(fmt ++ "\n", args);
         std.process.exit(1);
     }

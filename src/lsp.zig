@@ -70,7 +70,7 @@ pub const Range = struct {
     start: Position,
     end: Position,
 
-    pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: @This(), writer: *std.Io.Writer) !void {
         try writer.print("{}..{}", .{ self.start, self.end });
     }
 };
@@ -79,7 +79,7 @@ pub const Position = struct {
     line: u32,
     character: u32,
 
-    pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: @This(), writer: *std.Io.Writer) !void {
         try writer.print("{}:{}", .{ self.line, self.character });
     }
 };
