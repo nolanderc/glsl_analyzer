@@ -24,9 +24,11 @@ pub fn build(b: *std.Build) !void {
     {
         const unit_tests = b.addTest(.{
             .name = "unit-tests",
-            .root_source_file = b.path("src/main.zig"),
-            .target = target,
-            .optimize = optimize,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("src/main.zig"),
+                .target = target,
+                .optimize = optimize,
+            }),
         });
         try attachModules(unit_tests);
 
@@ -75,9 +77,11 @@ fn addExecutable(b: *std.Build, options: struct {
 }) !*std.Build.Step.Compile {
     const exe = b.addExecutable(.{
         .name = "glsl_analyzer",
-        .root_source_file = b.path("src/main.zig"),
-        .target = options.target,
-        .optimize = options.optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = options.target,
+            .optimize = options.optimize,
+        }),
     });
     try attachModules(exe);
     return exe;
@@ -88,8 +92,7 @@ fn attachModules(step: *std.Build.Step.Compile) !void {
 
     step.linkLibC();
 
-    const compressed_spec = try CompressStep.create(b, "spec.json.zlib", b.path("spec/spec.json"));
-    step.root_module.addAnonymousImport("glsl_spec.json.zlib", .{ .root_source_file = compressed_spec.getOutput() });
+    step.root_module.addAnonymousImport("glsl_spec.json", .{ .root_source_file = b.path("spec/spec.json") });
 
     const options = b.addOptions();
     const build_root_path = try std.fs.path.resolve(
@@ -100,69 +103,3 @@ fn attachModules(step: *std.Build.Step.Compile) !void {
     options.addOption([]const u8, "version", b.run(&.{ "git", "describe", "--tags", "--always" }));
     step.root_module.addOptions("build_options", options);
 }
-
-const CompressStep = struct {
-    step: std.Build.Step,
-    generated_file: std.Build.GeneratedFile,
-    input: std.Build.LazyPath,
-
-    pub fn create(b: *std.Build, name: []const u8, path: std.Build.LazyPath) !*@This() {
-        const self = try b.allocator.create(@This());
-        self.* = .{
-            .step = std.Build.Step.init(.{
-                .id = .custom,
-                .name = name,
-                .owner = b,
-                .makeFn = &make,
-            }),
-            .generated_file = .{ .step = &self.step },
-            .input = path,
-        };
-        path.addStepDependencies(&self.step);
-        return self;
-    }
-
-    pub fn getOutput(self: *@This()) std.Build.LazyPath {
-        return .{ .generated = .{ .file = &self.generated_file } };
-    }
-
-    fn make(step: *std.Build.Step, _: std.Build.Step.MakeOptions) anyerror!void {
-        const b = step.owner;
-        const self: *@This() = @fieldParentPtr("step", step);
-        const input_path = self.input.getPath(b);
-
-        var man = b.graph.cache.obtain();
-        defer man.deinit();
-
-        man.hash.add(@as(u32, 0x00000002));
-        const input_index = try man.addFile(input_path, 16 << 20);
-
-        const is_hit = try step.cacheHit(&man);
-
-        const digest = man.final();
-
-        const output_path = try b.cache_root.join(b.allocator, &.{ "o", &digest, step.name });
-        self.generated_file.path = output_path;
-
-        if (is_hit) return;
-
-        const input_contents = man.files.keys()[input_index].contents.?;
-
-        if (std.fs.path.dirname(output_path)) |dir| try b.cache_root.handle.makePath(dir);
-        var output_file = b.cache_root.handle.createFile(output_path, .{}) catch |err| {
-            std.log.err("could not open {s}: {s}", .{ output_path, @errorName(err) });
-            return err;
-        };
-        defer output_file.close();
-
-        var output_buffered = std.io.bufferedWriter(output_file.writer());
-        {
-            var compress_stream = try std.compress.zlib.compressor(output_buffered.writer(), .{});
-            try compress_stream.writer().writeAll(input_contents);
-            try compress_stream.finish();
-        }
-        try output_buffered.flush();
-
-        try step.writeManifest(&man);
-    }
-};
