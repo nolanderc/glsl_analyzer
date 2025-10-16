@@ -59,7 +59,7 @@ pub const Type = struct {
         }
         if (data.type.specifier) |specifier| {
             if (!first) try writer.writeByte(' ');
-            try prettify(data.tree, data.source, writer, prettifyOptions(specifier.getNode()));
+            try prettify(data.tree, data.source, writer, prettifyOptions(syntax.MixinType(@TypeOf(specifier)).getNode(specifier)));
             first = false;
         }
         if (data.type.block_fields) |block_fields| {
@@ -91,7 +91,7 @@ pub fn typeOf(reference: Reference) !?Type {
     const parsed = try reference.document.parseTree();
     const tree = parsed.tree;
 
-    const decl = syntax.AnyDeclaration.tryExtract(tree, reference.parent_declaration) orelse return null;
+    const decl = syntax.ExtractorMixin(syntax.AnyDeclaration).tryExtract(tree, reference.parent_declaration) orelse return null;
 
     switch (decl) {
         .function => |function| {
@@ -116,7 +116,7 @@ pub fn typeOf(reference: Reference) !?Type {
                     null,
                 .arrays = blk: {
                     const parent = tree.parent(reference.node) orelse break :blk null;
-                    const name = syntax.VariableName.tryExtract(tree, parent) orelse break :blk null;
+                    const name = syntax.ExtractorMixin(syntax.VariableName).tryExtract(tree, parent) orelse break :blk null;
                     break :blk name.arrayIterator();
                 },
             };
@@ -235,7 +235,7 @@ pub fn visibleFields(
         if (tag != .identifier and tag != .@".") return;
 
         const parent = tree.parent(start_node) orelse return;
-        const selection = syntax.Selection.tryExtract(tree, parent) orelse return;
+        const selection = syntax.ExtractorMixin(syntax.Selection).tryExtract(tree, parent) orelse return;
         var target = selection.get(.target, tree) orelse return;
 
         while (true) {
@@ -417,7 +417,7 @@ pub const Scope = struct {
         const tree = parsed.tree;
         const decl_node = reference.parent_declaration;
 
-        const func = syntax.FunctionDeclaration.tryExtract(tree, decl_node) orelse return null;
+        const func = syntax.ExtractorMixin(syntax.FunctionDeclaration).tryExtract(tree, decl_node) orelse return null;
         const parameters = func.get(.parameters, tree) orelse return null;
 
         var signature = std.ArrayList(u8).init(allocator);
@@ -493,13 +493,13 @@ fn collectLocalSymbols(
             try path.append(arena, child);
 
             if (closest_declaration == null) {
-                if (syntax.VariableDeclaration.tryExtract(tree, parent)) |vardecl| {
+                if (syntax.ExtractorMixin(syntax.VariableDeclaration).tryExtract(tree, parent)) |vardecl| {
                     var before = vardeclsBeforeInList(tree, vardecl) orelse 0;
                     before += @intFromBool(child == vardecl.nodeOf(.name, tree));
                     vardecls_before = before;
                 }
 
-                if (syntax.AnyDeclaration.match(tree, parent) != null) {
+                if (syntax.UnionExtractorMixin(syntax.AnyDeclaration).match(tree, parent) != null) {
                     closest_declaration = parent;
                 }
             }
@@ -539,12 +539,12 @@ fn registerLocalDeclaration(
     node: u32,
     options: CollectOptions,
 ) !void {
-    if (syntax.ExternalDeclaration.tryExtract(tree, node)) |declaration| {
+    if (syntax.ExtractorMixin(syntax.ExternalDeclaration).tryExtract(tree, node)) |declaration| {
         try collectDeclarationSymbols(scope, document, tree, declaration, options);
         return;
     }
 
-    if (syntax.ParameterList.tryExtract(tree, node)) |parameters| {
+    if (syntax.ExtractorMixin(syntax.ParameterList).tryExtract(tree, node)) |parameters| {
         var iterator = parameters.iterator();
         while (iterator.next(tree)) |parameter| {
             const variable = parameter.get(.variable, tree) orelse continue;
@@ -553,12 +553,12 @@ fn registerLocalDeclaration(
         return;
     }
 
-    if (syntax.Parameter.tryExtract(tree, node)) |parameter| {
+    if (syntax.ExtractorMixin(syntax.Parameter).tryExtract(tree, node)) |parameter| {
         const variable = parameter.get(.variable, tree) orelse return;
         try registerVariables(scope, document, tree, .{ .one = variable }, parameter.node, options);
     }
 
-    if (syntax.ConditionList.tryExtract(tree, node)) |condition_list| {
+    if (syntax.ExtractorMixin(syntax.ConditionList).tryExtract(tree, node)) |condition_list| {
         var statements = condition_list.iterator();
         while (statements.next(tree)) |statement| {
             switch (statement) {
@@ -583,7 +583,7 @@ fn collectGlobalSymbols(scope: *Scope, document: *Document) !void {
 
     const children = tree.children(tree.root);
     for (children.start..children.end) |child| {
-        const global = syntax.ExternalDeclaration.tryExtract(tree, @intCast(child)) orelse continue;
+        const global = syntax.ExtractorMixin(syntax.ExternalDeclaration).tryExtract(tree, @intCast(child)) orelse continue;
         try collectDeclarationSymbols(scope, document, tree, global, .{});
     }
 }

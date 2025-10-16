@@ -10,7 +10,6 @@ const Tag = parse.Tag;
 pub const File = ListExtractor(.file, null, ExternalDeclaration, null);
 
 pub const AnyDeclaration = union(enum) {
-    pub usingnamespace UnionExtractorMixin(@This());
     function: FunctionDeclaration,
     variable: Declaration,
     block: BlockDeclaration,
@@ -19,7 +18,6 @@ pub const AnyDeclaration = union(enum) {
 };
 
 pub const ExternalDeclaration = union(enum) {
-    pub usingnamespace UnionExtractorMixin(@This());
     function: FunctionDeclaration,
     variable: Declaration,
     block: BlockDeclaration,
@@ -59,7 +57,6 @@ pub const Declaration = Extractor(.declaration, struct {
 });
 
 pub const Variables = union(enum) {
-    pub usingnamespace UnionExtractorMixin(@This());
     one: VariableDeclaration,
     many: VariableDeclarationList,
 
@@ -99,8 +96,6 @@ pub const VariableDeclaration = Extractor(.variable_declaration, struct {
 });
 
 pub const VariableName = union(enum) {
-    pub usingnamespace UnionExtractorMixin(@This());
-
     identifier: Token(.identifier),
     array: ArraySpecifierName,
 
@@ -120,8 +115,6 @@ pub const VariableName = union(enum) {
 };
 
 pub const Initializer = union(enum) {
-    pub usingnamespace UnionExtractorMixin(@This());
-
     list: InitializerList,
     expr: Expression,
 };
@@ -130,13 +123,9 @@ pub const InitializerList = ListExtractor(.initializer_list, Token(.@"{"), Initi
 
 pub const QualifierList = ListExtractor(.type_qualifier_list, null, Qualifier, null);
 
-pub const Qualifier = union(enum) {
-    pub usingnamespace UnionExtractorMixin(@This());
-};
+pub const Qualifier = union(enum) {};
 
 pub const TypeSpecifier = union(enum) {
-    pub usingnamespace UnionExtractorMixin(@This());
-
     identifier: Token(.identifier),
     array_specifier: ArraySpecifierName,
     struct_specifier: StructSpecifier,
@@ -174,7 +163,6 @@ pub const Array = Extractor(.array, struct {
 pub const Block = ListExtractor(.block, Token(.@"{"), Statement, Token(.@"}"));
 
 pub const Statement = union(enum) {
-    pub usingnamespace UnionExtractorMixin(@This());
     declaration: Declaration,
 };
 
@@ -183,8 +171,6 @@ pub const ConditionList = ListExtractor(.condition_list, Token(.@"("), Statement
 pub const Expression = Lazy("ExpressionUnion");
 
 pub const ExpressionUnion = union(enum) {
-    pub usingnamespace UnionExtractorMixin(@This());
-
     identifier: Token(.identifier),
     number: Token(.number),
     array: ArraySpecifier(Expression),
@@ -200,8 +186,6 @@ pub const Selection = Extractor(.selection, struct {
 pub fn Token(comptime tag: Tag) type {
     comptime std.debug.assert(tag.isToken());
     return struct {
-        pub usingnamespace ExtractorMixin(@This());
-
         node: u32,
 
         pub fn match(tree: Tree, node: u32) ?void {
@@ -224,8 +208,6 @@ pub fn Extractor(comptime expected_tag: Tag, comptime T: type) type {
     const FieldEnum = std.meta.FieldEnum(T);
 
     return struct {
-        pub usingnamespace ExtractorMixin(@This());
-
         fn Match(comptime FieldType: type) type {
             return struct {
                 node_offset: ?u7 = null,
@@ -266,7 +248,7 @@ pub fn Extractor(comptime expected_tag: Tag, comptime T: type) type {
             inline for (fields) |field| {
                 while (current < children.end) : (current += 1) {
                     const tag = tree.tag(current);
-                    if (field.type.match(tree, current)) |result| {
+                    if (MixinType(field.type).match(tree, current)) |result| {
                         @field(matches, field.name) = .{
                             .node_offset = @intCast(current - children.start),
                             .result = result,
@@ -293,7 +275,7 @@ pub fn Extractor(comptime expected_tag: Tag, comptime T: type) type {
             const field_match = @field(self.matches, @tagName(field));
             const node_offset = field_match.node_offset orelse return null;
             const node = tree.children(self.node).start + node_offset;
-            return std.meta.FieldType(T, field).extract(tree, node, field_match.result);
+            return MixinType(std.meta.FieldType(T, field)).extract(tree, node, field_match.result);
         }
     };
 }
@@ -303,8 +285,6 @@ pub fn ListExtractor(comptime tag: Tag, comptime Prefix: ?type, comptime Item: t
     const SuffixMatch = if (Suffix) |S| MatchResult(S) else noreturn;
 
     return struct {
-        pub usingnamespace ExtractorMixin(@This());
-
         const Self = @This();
 
         node: u32,
@@ -344,17 +324,25 @@ pub fn ListExtractor(comptime tag: Tag, comptime Prefix: ?type, comptime Item: t
             };
         }
 
-        pub usingnamespace if (Prefix) |PrefixType| struct {
-            pub fn prefix(self: Self, tree: Tree) ?PrefixType {
-                return PrefixType.extract(tree, self.items.start - 1, self.prefix_match orelse return null);
-            }
-        } else struct {};
+        const PrefixType = if (Prefix) |T|
+            T
+        else
+            void;
+        pub fn prefix(self: Self, tree: Tree) ?PrefixType {
+            if (PrefixType == void)
+                return null;
+            return PrefixType.extract(tree, self.items.start - 1, self.prefix_match orelse return null);
+        }
 
-        pub usingnamespace if (Suffix) |SuffixType| struct {
-            pub fn suffix(self: Self, tree: Tree) ?SuffixType {
-                return SuffixType.extract(tree, self.items.end, self.suffix_match orelse return null);
-            }
-        } else struct {};
+        const SuffixType = if (Suffix) |T|
+            T
+        else
+            void;
+        pub fn suffix(self: Self, tree: Tree) ?SuffixType {
+            if (SuffixType == void)
+                return null;
+            return SuffixType.extract(tree, self.items.end, self.suffix_match orelse return null);
+        }
 
         pub const Iterator = ListIterator(Item);
 
@@ -367,14 +355,16 @@ pub fn ListExtractor(comptime tag: Tag, comptime Prefix: ?type, comptime Item: t
 }
 
 pub fn ListIterator(comptime Item: type) type {
+    const Mixin = MixinType(Item);
+
     return struct {
         items: parse.Range,
 
         pub fn next(self: *@This(), tree: Tree) ?Item {
             while (self.items.start < self.items.end) {
                 defer self.items.start += 1;
-                if (Item.match(tree, self.items.start)) |res| {
-                    return Item.extract(tree, self.items.start, res);
+                if (Mixin.match(tree, self.items.start)) |res| {
+                    return Mixin.extract(tree, self.items.start, res);
                 }
             }
             return null;
@@ -386,8 +376,6 @@ pub fn UnionExtractorMixin(comptime Self: type) type {
     const fields = std.meta.fields(Self);
 
     return struct {
-        pub usingnamespace ExtractorMixin(Self);
-
         const MatchUnion = @Type(.{
             .@"union" = .{
                 .layout = .auto,
@@ -445,12 +433,12 @@ pub fn UnionExtractorMixin(comptime Self: type) type {
 /// Break type-level dependency cycles through lazy-evaluation indirection.
 pub fn Lazy(comptime type_name: []const u8) type {
     return struct {
-        pub usingnamespace ExtractorMixin(@This());
-
         node: u32,
         match_result_bytes: [4]u8,
 
+        // TODO: unclear mixin
         const Type = @field(syntax, type_name);
+        const Mixin = MixinType(Type);
         const Match = MatchResult(Type);
         const MatchInt = std.meta.Int(.unsigned, 8 * @sizeOf(Match));
 
@@ -464,12 +452,12 @@ pub fn Lazy(comptime type_name: []const u8) type {
         fn decodeMatchResult(self: @This(), tree: Tree) Match {
             switch (@sizeOf(Match)) {
                 0...4 => return std.mem.bytesToValue(Match, self.match_result_bytes[0..@sizeOf(Match)]),
-                else => return Type.match(tree, self.node).?,
+                else => return Mixin.match(tree, self.node).?,
             }
         }
 
         pub fn match(tree: Tree, node: u32) ?[4]u8 {
-            return encodeMatchResult(Type.match(tree, node) orelse return null);
+            return encodeMatchResult(Mixin.match(tree, node) orelse return null);
         }
 
         pub fn extract(_: Tree, node: u32, match_result_bytes: [4]u8) @This() {
@@ -481,22 +469,48 @@ pub fn Lazy(comptime type_name: []const u8) type {
 
         pub fn get(self: @This(), tree: Tree) Type {
             const match_result = self.decodeMatchResult(tree);
-            return Type.extract(tree, self.node, match_result);
+            return Mixin.extract(tree, self.node, match_result);
         }
     };
 }
 
 pub fn MatchResult(comptime T: type) type {
-    const match_fn_return = @typeInfo(@TypeOf(T.match)).@"fn".return_type.?;
+    const Mixin = MixinType(T);
+
+    const match_fn_return = @typeInfo(@TypeOf(Mixin.match)).@"fn".return_type.?;
     return @typeInfo(match_fn_return).optional.child;
 }
 
 pub fn ExtractorMixin(comptime Self: type) type {
+    const Mixin = MixinType(Self);
+
     return struct {
         pub fn tryExtract(tree: Tree, node: u32) ?Self {
-            const match_result = Self.match(tree, node) orelse return null;
-            return Self.extract(tree, node, match_result);
+            const match_result = Mixin.match(tree, node) orelse return null;
+            return Mixin.extract(tree, node, match_result);
         }
+    };
+}
+
+pub fn MixinType(comptime T: type) type {
+    if (@hasField(T, "match"))
+        return T;
+
+    if (@hasField(T, "extract"))
+        return T;
+
+    return switch (T) {
+        AnyDeclaration,
+        ExternalDeclaration,
+        Variables,
+        VariableName,
+        Initializer,
+        TypeSpecifier,
+        Statement,
+        ExpressionUnion,
+        Qualifier,
+        => UnionExtractorMixin(T),
+        else => T,
     };
 }
 
