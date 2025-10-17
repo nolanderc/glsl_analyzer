@@ -90,6 +90,9 @@ pub const Error = struct {
     data: ?std.json.Value = null,
 
     pub const Code = enum(i32) {
+        pub const jsonStringify = util.JsonEnumAsIntMixin(@This()).jsonStringify;
+        pub const jsonParse = util.JsonEnumAsIntMixin(@This()).jsonParse;
+
         parse_error = -32700,
         invalid_request = -32600,
         method_not_found = -32601,
@@ -118,6 +121,9 @@ pub const CompletionItem = struct {
     documentation: ?MarkupContent = null,
 
     pub const Kind = enum(u8) {
+        pub const jsonStringify = util.JsonEnumAsIntMixin(@This()).jsonStringify;
+        pub const jsonParse = util.JsonEnumAsIntMixin(@This()).jsonParse;
+
         text = 1,
         method,
         function,
