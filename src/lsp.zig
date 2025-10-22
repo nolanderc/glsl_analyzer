@@ -168,3 +168,44 @@ pub const Location = struct {
     uri: []const u8,
     range: Range,
 };
+
+pub const Diagnostic = struct {
+    range: Range,
+    severity: ?DiagnosticSeverity = null,
+    code: ?[]const u8 = null,
+    source: ?[]const u8 = "glsl_analyzer",
+    message: []const u8,
+    tags: ?[]DiagnosticTag = null,
+    relatedInformation: ?[]DiagnosticRelatedInformation = null,
+};
+
+pub const DiagnosticSeverity = enum(u8) {
+    @"error" = 1,
+    warning = 2,
+    information = 3,
+    hint = 4,
+
+    pub fn jsonStringify(self: @This(), jw: anytype) !void {
+        try jw.write(@intFromEnum(self));
+    }
+};
+
+pub const DiagnosticTag = enum(u8) {
+    unnecessary = 1,
+    deprecated = 2,
+
+    pub fn jsonStringify(self: @This(), jw: anytype) !void {
+        try jw.write(@intFromEnum(self));
+    }
+};
+
+pub const DiagnosticRelatedInformation = struct {
+    location: Location,
+    message: []const u8,
+};
+
+pub const PublishDiagnosticsParams = struct {
+    uri: []const u8,
+    version: ?i64 = null,
+    diagnostics: []const Diagnostic,
+};

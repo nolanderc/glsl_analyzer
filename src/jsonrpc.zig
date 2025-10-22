@@ -74,3 +74,24 @@ pub const JsonPreformatted = struct {
         try jw.print("{s}", .{self.raw});
     }
 };
+
+pub const Notification = struct {
+    jsonrpc: []const u8 = "2.0",
+    method: []const u8,
+    params: JsonPreformatted,
+
+    pub fn jsonStringify(self: @This(), jw: anytype) !void {
+        try jw.beginObject();
+
+        try jw.objectField("jsonrpc");
+        try jw.write(self.jsonrpc);
+
+        try jw.objectField("method");
+        try jw.write(self.method);
+
+        try jw.objectField("params");
+        try jw.write(self.params);
+
+        try jw.endObject();
+    }
+};

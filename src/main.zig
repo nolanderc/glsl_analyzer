@@ -7,6 +7,7 @@ const lsp = @import("lsp.zig");
 const rpc = @import("jsonrpc.zig");
 const Response = rpc.Response;
 const Request = rpc.Request;
+const Notification = rpc.Notification;
 
 const Workspace = @import("Workspace.zig");
 const cli = @import("cli.zig");
@@ -385,6 +386,69 @@ const State = struct {
         try self.channel.flush();
     }
 
+    pub fn sendNotification(self: *State, method: []const u8, params: anytype) !void {
+        const params_bytes = try std.json.stringifyAlloc(self.allocator, params, .{});
+        defer self.allocator.free(params_bytes);
+
+        const notification = Notification{
+            .method = method,
+            .params = .{ .raw = params_bytes },
+        };
+
+        const format_options = std.json.StringifyOptions{
+            .emit_null_optional_fields = false,
+        };
+
+        var counting = std.io.countingWriter(std.io.null_writer);
+        try std.json.stringify(notification, format_options, counting.writer());
+        const content_length = counting.bytes_written;
+
+        const writer = self.channel.writer();
+        try writer.print("Content-Length: {}\r\n\r\n", .{content_length});
+        try std.json.stringify(notification, format_options, writer);
+        try self.channel.flush();
+    }
+
+    pub fn publishDiagnostics(self: *State, document: *Workspace.Document) !void {
+        var parse_diagnostics = std.ArrayList(parse.Diagnostic).init(self.allocator);
+        defer parse_diagnostics.deinit();
+
+        var tree = parse.parse(self.allocator, document.source(), .{
+            .diagnostics = &parse_diagnostics,
+        }) catch |err| {
+            std.log.warn("failed to re-parse for diagnostics: {}", .{err});
+            return;
+        };
+        defer tree.deinit(self.allocator);
+
+        // Convert parser diagnostics to LSP diagnostics
+        const lsp_diagnostics = try self.allocator.alloc(lsp.Diagnostic, parse_diagnostics.items.len);
+        defer self.allocator.free(lsp_diagnostics);
+
+        for (parse_diagnostics.items, lsp_diagnostics) |parse_diag, *lsp_diag| {
+            const start_pos = parse_diag.position(document.source());
+            const end_pos = util.positionFromUtf8(document.source(), parse_diag.span.end);
+
+            lsp_diag.* = .{
+                .range = .{
+                    .start = start_pos,
+                    .end = end_pos,
+                },
+                .severity = .@"error",
+                .source = "glsl_analyzer",
+                .message = parse_diag.message,
+            };
+        }
+
+        const params = lsp.PublishDiagnosticsParams{
+            .uri = document.uri,
+            .version = document.version,
+            .diagnostics = lsp_diagnostics,
+        };
+
+        try self.sendNotification("textDocument/publishDiagnostics", params);
+    }
+
     pub fn fail(
         self: *State,
         id: Request.Id,
@@ -519,6 +583,10 @@ pub const Dispatch = struct {
         const file = try state.workspace.getOrCreateDocument(document.versioned());
         try file.replaceAll(document.text);
 
+        state.publishDiagnostics(file) catch |err| {
+            std.log.warn("failed to publish diagnostics: {}", .{err});
+        };
+
         return;
     }
 
@@ -547,6 +615,12 @@ pub const Dispatch = struct {
             if (params.value.text) |text| text.len else null,
         });
 
+        if (state.workspace.getDocument(params.value.textDocument) catch null) |file| {
+            state.publishDiagnostics(file) catch |err| {
+                std.log.warn("failed to publish diagnostics: {}", .{err});
+            };
+        }
+
         return;
     }
 
@@ -571,6 +645,10 @@ pub const Dispatch = struct {
         }
 
         file.version = params.value.textDocument.version;
+
+        state.publishDiagnostics(file) catch |err| {
+            std.log.warn("failed to publish diagnostics: {}", .{err});
+        };
     }
 
     pub const CompletionParams = struct {
