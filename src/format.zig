@@ -11,7 +11,7 @@ pub const FormatOptions = struct {
 pub fn format(
     tree: parse.Tree,
     source: []const u8,
-    writer: anytype,
+    writer: *std.Io.Writer,
     options: FormatOptions,
 ) !void {
     var inner_writer = Writer(@TypeOf(writer)){
@@ -157,7 +157,7 @@ fn Writer(comptime ChildWriter: type) type {
         }
 
         pub fn emitIndent(self: *Self) !void {
-            try self.child_writer.writeByteNTimes(' ', self.indentation * self.tab_size);
+            _ = try self.child_writer.splatByteAll(' ', self.indentation * self.tab_size);
             if (self.indentation > 0) self.preceded_by_space = true;
         }
 
@@ -679,10 +679,10 @@ fn expectIsFormatted(source: []const u8) !void {
 }
 
 fn expectFormat(source: []const u8, expected: []const u8) !void {
-    var ignored = std.ArrayList(parse.Token).init(std.testing.allocator);
+    var ignored = std.array_list.Managed(parse.Token).init(std.testing.allocator);
     defer ignored.deinit();
 
-    var diagnostics = std.ArrayList(parse.Diagnostic).init(std.testing.allocator);
+    var diagnostics = std.array_list.Managed(parse.Diagnostic).init(std.testing.allocator);
     defer diagnostics.deinit();
 
     var tree = try parse.parse(std.testing.allocator, source, .{
@@ -691,13 +691,13 @@ fn expectFormat(source: []const u8, expected: []const u8) !void {
     });
     defer tree.deinit(std.testing.allocator);
 
-    var buffer = std.ArrayList(u8).init(std.testing.allocator);
+    var buffer: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer buffer.deinit();
 
-    try format(tree, source, buffer.writer(), .{ .ignored = ignored.items });
+    try format(tree, source, &buffer.writer, .{ .ignored = ignored.items });
 
-    std.testing.expectEqualStrings(expected, buffer.items) catch |err| {
-        std.debug.print("\n========= parse tree ==========\n{}", .{tree.format(source)});
+    std.testing.expectEqualStrings(expected, buffer.written()) catch |err| {
+        std.debug.print("\n========= parse tree ==========\n{f}", .{tree.format(source)});
 
         if (diagnostics.items.len > 0) {
             std.debug.print("\n========= diagnostics ==========\n", .{});
